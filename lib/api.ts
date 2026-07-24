@@ -65,6 +65,14 @@ export async function getEvents(
   return { events: data, meta: meta! };
 }
 
+/** Signed-in user's saved events, newest save first. Requires a session. */
+export async function getSavedEvents(): Promise<EventItem[]> {
+  const { data } = await apiFetch<EventItem[]>("/me/saved-events", {
+    credentials: "include",
+  });
+  return data;
+}
+
 /** Returns undefined on 404 so pages can call notFound(); throws otherwise. */
 export async function getEvent(slug: string): Promise<EventItem | undefined> {
   try {

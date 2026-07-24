@@ -23,11 +23,10 @@ export interface Profile {
   notifyReminders: boolean;
 }
 
-// Local-only state. Saved events, artist subscriptions and orders stay in
-// localStorage until those BE modules are connected; identity (signedIn,
-// profile) comes from the better-auth session + GET /api/v1/me.
+// Local-only state. Artist subscriptions and orders stay in localStorage
+// until those BE modules are connected; identity (signedIn, profile) and
+// saved events come from the better-auth session + /api/v1/me.
 interface Persisted {
-  savedSlugs: string[];
   subscribedArtists: string[];
   orders: Order[];
 }
@@ -36,9 +35,10 @@ interface UserValue extends Persisted {
   hydrated: boolean;
   signedIn: boolean;
   profile: Profile;
+  savedSlugs: string[];
   signOut: () => void;
   updateProfile: (patch: Partial<Profile>) => void;
-  toggleSaved: (slug: string) => void;
+  toggleSaved: (ev: { id: string; slug: string }) => void;
   isSaved: (slug: string) => boolean;
   toggleSubscribe: (slug: string) => void;
   isSubscribed: (slug: string) => boolean;
@@ -55,7 +55,6 @@ const emptyProfile: Profile = {
 };
 
 const empty: Persisted = {
-  savedSlugs: [],
   subscribedArtists: [],
   orders: [],
 };
@@ -65,9 +64,14 @@ const Ctx = createContext<UserValue | null>(null);
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<Persisted>(empty);
   const [storageHydrated, setStorageHydrated] = useState(false);
-  // Profile fetched from /api/v1/me, keyed by user so a stale fetch never
-  // bleeds across sign-ins. The exposed profile derives from the session.
-  const [remote, setRemote] = useState<{ userId: string; profile: Profile } | null>(null);
+  // Profile + saved slugs fetched from /api/v1/me, keyed by user so a stale
+  // fetch never bleeds across sign-ins. The exposed values derive from the
+  // session.
+  const [remote, setRemote] = useState<{
+    userId: string;
+    profile: Profile;
+    savedSlugs: string[];
+  } | null>(null);
   const first = useRef(true);
 
   const { data: session, isPending } = authClient.useSession();
@@ -99,13 +103,17 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     (async () => {
       let profile: Profile;
+      let savedSlugs: string[];
       try {
         const res = await fetch(`${API_URL}/api/v1/me`, {
           credentials: "include",
         });
         if (!res.ok) throw new Error(`GET /me ${res.status}`);
-        const body = (await res.json()) as { data: { profile: Profile } };
+        const body = (await res.json()) as {
+          data: { profile: Profile; savedSlugs: string[] };
+        };
         profile = body.data.profile;
+        savedSlugs = body.data.savedSlugs;
       } catch {
         // Session exists but /me failed — fall back to the session user.
         profile = {
@@ -114,8 +122,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           email: email ?? "",
           ...(image ? { picture: image } : {}),
         };
+        savedSlugs = [];
       }
-      if (!cancelled) setRemote({ userId, profile });
+      if (!cancelled) setRemote({ userId, profile, savedSlugs });
     })();
     return () => {
       cancelled = true;
@@ -125,6 +134,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const profileLoaded = Boolean(session && remote?.userId === session.user.id);
   const profile: Profile =
     signedIn && profileLoaded ? remote!.profile : emptyProfile;
+  const savedSlugs: string[] =
+    signedIn && profileLoaded ? remote!.savedSlugs : [];
 
   const signOut = useCallback(() => {
     void authClient.signOut();
@@ -141,14 +152,45 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }).catch(() => {});
   }, []);
 
-  const toggleSaved = useCallback((slug: string) => {
-    setState((s) => ({
-      ...s,
-      savedSlugs: s.savedSlugs.includes(slug)
-        ? s.savedSlugs.filter((x) => x !== slug)
-        : [slug, ...s.savedSlugs],
-    }));
-  }, []);
+  const toggleSaved = useCallback(
+    (ev: { id: string; slug: string }) => {
+      if (!remote) return; // signed out — SaveButton redirects instead
+      const wasSaved = remote.savedSlugs.includes(ev.slug);
+      const userId = remote.userId;
+      // Optimistic flip; the API writes by id while the UI reads by slug.
+      setRemote({
+        ...remote,
+        savedSlugs: wasSaved
+          ? remote.savedSlugs.filter((s) => s !== ev.slug)
+          : [ev.slug, ...remote.savedSlugs],
+      });
+      void fetch(
+        `${API_URL}/api/v1/me/saved-events/${encodeURIComponent(ev.id)}`,
+        {
+          method: wasSaved ? "DELETE" : "PUT",
+          credentials: "include",
+        },
+      )
+        .then((res) => {
+          if (!res.ok) throw new Error(`${res.status}`);
+        })
+        .catch(() => {
+          // Revert the optimistic change — for this user's state only.
+          setRemote((r) => {
+            if (!r || r.userId !== userId) return r;
+            return {
+              ...r,
+              savedSlugs: wasSaved
+                ? r.savedSlugs.includes(ev.slug)
+                  ? r.savedSlugs
+                  : [ev.slug, ...r.savedSlugs]
+                : r.savedSlugs.filter((s) => s !== ev.slug),
+            };
+          });
+        });
+    },
+    [remote],
+  );
 
   const toggleSubscribe = useCallback((slug: string) => {
     setState((s) => ({
@@ -172,10 +214,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     hydrated: storageHydrated && !isPending && (!signedIn || profileLoaded),
     signedIn,
     profile,
+    savedSlugs,
     signOut,
     updateProfile,
     toggleSaved,
-    isSaved: (slug: string) => state.savedSlugs.includes(slug),
+    isSaved: (slug: string) => savedSlugs.includes(slug),
     toggleSubscribe,
     isSubscribed: (slug: string) => state.subscribedArtists.includes(slug),
     addOrder,

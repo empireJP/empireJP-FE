@@ -41,7 +41,7 @@ export function EventCard({ event }: { event: EventItem }) {
         <span className="absolute right-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-xs font-bold text-neutral-900 backdrop-blur-sm">
           {priceLabel(from)}
         </span>
-        <SaveButton slug={event.slug} className="absolute bottom-3 right-3" />
+        <SaveButton id={event.id} slug={event.slug} className="absolute bottom-3 right-3" />
       </div>
 
       <div className="flex flex-1 flex-col gap-2 p-4">
