@@ -1,18 +1,22 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/user";
 import { HeartIcon } from "./Icons";
 
 export function SaveButton({
+  id,
   slug,
   className = "",
   size = 32,
 }: {
+  id: string;
   slug: string;
   className?: string;
   size?: number;
 }) {
-  const { isSaved, toggleSaved, hydrated } = useUser();
+  const router = useRouter();
+  const { isSaved, toggleSaved, hydrated, signedIn } = useUser();
   const saved = hydrated && isSaved(slug);
 
   return (
@@ -23,7 +27,11 @@ export function SaveButton({
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        toggleSaved(slug);
+        if (!signedIn) {
+          router.push("/signin");
+          return;
+        }
+        toggleSaved({ id, slug });
       }}
       style={{ width: size, height: size }}
       className={`grid place-items-center rounded-full bg-black/45 backdrop-blur-sm transition-all hover:bg-black/65 active:scale-90 ${className}`}

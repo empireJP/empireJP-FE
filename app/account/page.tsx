@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser, type Profile } from "@/lib/user";
-import { getEvent } from "@/lib/data";
+import { getEvent, getSavedEvents } from "@/lib/api";
 import { getArtist, artistEvents } from "@/lib/artists";
 import type { Artist } from "@/lib/artists";
 import type { EventItem } from "@/lib/types";
@@ -52,6 +52,7 @@ export default function AccountPage() {
     signedIn,
     profile,
     savedSlugs,
+    isSaved,
     subscribedArtists,
     orders,
     signOut,
@@ -61,8 +62,48 @@ export default function AccountPage() {
   const [tab, setTab] = useState<Tab>("tickets");
   const [form, setForm] = useState<Profile>(profile);
   const [saved, setSaved] = useState(false);
+  const [savedEvents, setSavedEvents] = useState<EventItem[] | null>(null);
+  const [orderEvents, setOrderEvents] = useState<Record<string, EventItem>>({});
 
   useEffect(() => setForm(profile), [hydrated, signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Server list for the saved tab; re-fetched each time the tab opens.
+  useEffect(() => {
+    if (tab !== "saved" || !signedIn) return;
+    let cancelled = false;
+    getSavedEvents()
+      .then((evs) => {
+        if (!cancelled) setSavedEvents(evs);
+      })
+      .catch(() => {
+        if (!cancelled) setSavedEvents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, signedIn]);
+
+  // Resolve order events from the API (orders themselves are still local
+  // until Phase 3).
+  useEffect(() => {
+    if (!signedIn || orders.length === 0) return;
+    let cancelled = false;
+    const slugs = [...new Set(orders.map((o) => o.eventSlug))];
+    Promise.all(slugs.map((s) => getEvent(s).catch(() => undefined))).then(
+      (evs) => {
+        if (cancelled) return;
+        const map: Record<string, EventItem> = {};
+        slugs.forEach((s, i) => {
+          const e = evs[i];
+          if (e) map[s] = e;
+        });
+        setOrderEvents(map);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn, orders]);
 
   if (!hydrated) {
     return (
@@ -95,9 +136,9 @@ export default function AccountPage() {
     );
   }
 
-  const savedEvents = savedSlugs
-    .map(getEvent)
-    .filter((e): e is EventItem => Boolean(e));
+  // Optimistic removal: unhearting drops the slug from provider state, so
+  // filtering the fetched list by isSaved updates the grid immediately.
+  const visibleSaved = (savedEvents ?? []).filter((e) => isSaved(e.slug));
   const followed = subscribedArtists
     .map(getArtist)
     .filter((a): a is Artist => Boolean(a));
@@ -118,7 +159,7 @@ export default function AccountPage() {
 
   const TABS: { key: Tab; label: string; icon: typeof TicketIcon; count?: number }[] = [
     { key: "tickets", label: "Tickets", icon: TicketIcon, count: orders.length },
-    { key: "saved", label: "Saved", icon: HeartIcon, count: savedEvents.length },
+    { key: "saved", label: "Saved", icon: HeartIcon, count: savedSlugs.length },
     { key: "following", label: "Following", icon: BellIcon, count: followed.length },
     { key: "settings", label: "Settings", icon: SettingsIcon },
   ];
@@ -194,7 +235,7 @@ export default function AccountPage() {
           ) : (
             <div className="flex flex-col gap-6">
               {orders.map((order) => {
-                const event = getEvent(order.eventSlug);
+                const event = orderEvents[order.eventSlug];
                 return (
                   <div key={order.code} className="rounded-2xl border border-line bg-surface p-4 sm:p-5">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3">
@@ -222,7 +263,9 @@ export default function AccountPage() {
 
         {/* SAVED */}
         {tab === "saved" &&
-          (savedEvents.length === 0 ? (
+          (savedEvents === null ? (
+            <div className="h-40 animate-pulse rounded-2xl bg-surface-2" />
+          ) : visibleSaved.length === 0 ? (
             <Empty
               icon={<HeartIcon width={26} height={26} />}
               title="No saved events"
@@ -232,7 +275,7 @@ export default function AccountPage() {
             />
           ) : (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {savedEvents.map((e) => (
+              {visibleSaved.map((e) => (
                 <EventCard key={e.id} event={e} />
               ))}
             </div>
