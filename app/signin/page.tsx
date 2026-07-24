@@ -6,16 +6,6 @@ import { Logo } from "@/components/Logo";
 import { authClient } from "@/lib/auth-client";
 import { ArrowRightIcon, GoogleIcon, MailIcon } from "@/components/Icons";
 
-/**
- * Post-sign-in destination from ?next=, restricted to internal paths so the
- * param can't be abused as an open redirect. Read at action time to keep the
- * page prerenderable (useSearchParams would force a Suspense boundary).
- */
-function nextPath() {
-  const next = new URLSearchParams(window.location.search).get("next");
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
-}
-
 export default function SignInPage() {
   const router = useRouter();
   const [step, setStep] = useState<"email" | "otp">("email");
@@ -27,11 +17,10 @@ export default function SignInPage() {
   async function signInWithGoogle() {
     setError("");
     setBusy(true);
-    // Full-page redirect to Google; better-auth lands back on ?next= or the
-    // homepage.
+    // Full-page redirect to Google; better-auth lands back on the homepage.
     const { error: err } = await authClient.signIn.social({
       provider: "google",
-      callbackURL: `${window.location.origin}${nextPath()}`,
+      callbackURL: `${window.location.origin}/`,
     });
     if (err) {
       setError(err.message || "Google sign-in is unavailable right now.");
@@ -72,7 +61,7 @@ export default function SignInPage() {
       setError(err.message || "That code didn't work. Try again.");
       return;
     }
-    router.push(nextPath());
+    router.push("/");
   }
 
   return (

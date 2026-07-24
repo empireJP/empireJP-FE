@@ -14,10 +14,10 @@ export default function TicketsStep() {
   const { event, lines, setQty, totals } = useCheckout();
   const { hydrated, signedIn } = useUser();
 
-  // Checkout requires a session — deep links land on sign-in first.
+  // Checkout requires a session — deep links land on the sign-in gate first.
   useEffect(() => {
     if (hydrated && !signedIn) {
-      router.replace("/signin?next=/checkout/tickets");
+      router.replace("/checkout/signin");
     }
   }, [hydrated, signedIn, router]);
 

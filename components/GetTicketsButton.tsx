@@ -20,11 +20,10 @@ export function GetTicketsButton({
 
   function go() {
     // Start the checkout either way — it survives the sign-in round trip in
-    // sessionStorage, so the user lands back on their ticket selection.
+    // sessionStorage, so the sign-in gate can show the order summary and
+    // continue into ticket selection.
     startCheckout(slug);
-    router.push(
-      signedIn ? "/checkout/tickets" : "/signin?next=/checkout/tickets",
-    );
+    router.push(signedIn ? "/checkout/tickets" : "/checkout/signin");
   }
 
   return (
