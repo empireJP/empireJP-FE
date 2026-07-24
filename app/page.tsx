@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { CATEGORIES, trendingEvents, upcomingEvents } from "@/lib/data";
+import { CATEGORIES } from "@/lib/data";
+import { getEvents } from "@/lib/api";
 import { ARTISTS } from "@/lib/artists";
 import { HeroSlider } from "@/components/HeroSlider";
 import { HeroBackground } from "@/components/HeroBackground";
@@ -40,10 +41,12 @@ const SOCIALS = [
   },
 ];
 
-export default function Home() {
-  const events = upcomingEvents();
+export default async function Home() {
+  const [{ events }, { events: trending }] = await Promise.all([
+    getEvents({ sort: "date", limit: 50 }),
+    getEvents({ sort: "trending", limit: 6 }),
+  ]);
   const slides = events.slice(0, 7);
-  const trending = trendingEvents(6);
   const tiles = CATEGORIES.map((c) => {
     const list = events.filter((e) => e.category === c);
     return { category: c, event: list[0], count: list.length };

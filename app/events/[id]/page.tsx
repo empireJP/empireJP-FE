@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { EVENTS, getEvent } from "@/lib/data";
+import { getEvent } from "@/lib/api";
 import { artistsOnEvent } from "@/lib/artists";
 import { EventCover } from "@/components/EventCover";
 import { GetTicketsButton } from "@/components/GetTicketsButton";
@@ -17,17 +17,13 @@ import {
 } from "@/components/Icons";
 import { calendarParts, dateLong, money, to12h } from "@/lib/format";
 
-export function generateStaticParams() {
-  return EVENTS.map((e) => ({ id: e.slug }));
-}
-
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const e = getEvent(id);
+  const e = await getEvent(id);
   if (!e) return { title: "Event not found — Empire Events" };
   return { title: `${e.title} · ${e.venue} — Empire Events`, description: e.tagline };
 }
@@ -38,7 +34,7 @@ export default async function EventPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const event = getEvent(id);
+  const event = await getEvent(id);
   if (!event) notFound();
 
   const cal = calendarParts(event.date);

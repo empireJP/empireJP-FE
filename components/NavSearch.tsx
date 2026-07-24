@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { EVENTS, trendingEvents } from "@/lib/data";
+import { getEvents } from "@/lib/api";
+import type { EventItem } from "@/lib/types";
 import { ARTISTS } from "@/lib/artists";
 import { Avatar } from "./Avatar";
 import { EventCover } from "./EventCover";
@@ -60,24 +61,54 @@ export function NavSearch({
     return () => document.removeEventListener("mousedown", onDown);
   }, [open, setOpen]);
 
-  const { artists, events, popular } = useMemo(() => {
+  const { artists, popular } = useMemo(() => {
     const s = norm(q.trim());
     if (!s) {
-      return { artists: ARTISTS.slice(0, 3), events: trendingEvents(3), popular: true };
+      return { artists: ARTISTS.slice(0, 3), popular: true };
     }
     const artists = ARTISTS.filter(
       (a) => norm(a.name).includes(s) || norm(a.role).includes(s)
     ).slice(0, 4);
-    const events = EVENTS.filter(
-      (e) =>
-        norm(e.title).includes(s) ||
-        norm(e.venue).includes(s) ||
-        norm(e.area).includes(s) ||
-        norm(e.category).includes(s) ||
-        e.lineup.some((p) => norm(p.name).includes(s))
-    ).slice(0, 5);
-    return { artists, events, popular: false };
+    return { artists, popular: false };
   }, [q]);
+
+  // Events come from the API: trending when the query is empty (fetched once
+  // and cached), otherwise a debounced search. A sequence counter drops
+  // responses that arrive after a newer request started.
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const trendingCache = useRef<EventItem[] | null>(null);
+  const seq = useRef(0);
+
+  useEffect(() => {
+    if (!open) return;
+    const s = q.trim();
+    const mySeq = ++seq.current;
+    if (!s) {
+      if (trendingCache.current) {
+        setEvents(trendingCache.current);
+        return;
+      }
+      getEvents({ sort: "trending", limit: 6 })
+        .then(({ events }) => {
+          trendingCache.current = events;
+          if (seq.current === mySeq) setEvents(events);
+        })
+        .catch(() => {
+          if (seq.current === mySeq) setEvents([]);
+        });
+      return;
+    }
+    const id = setTimeout(() => {
+      getEvents({ q: s, limit: 6 })
+        .then(({ events }) => {
+          if (seq.current === mySeq) setEvents(events);
+        })
+        .catch(() => {
+          if (seq.current === mySeq) setEvents([]);
+        });
+    }, 250);
+    return () => clearTimeout(id);
+  }, [q, open]);
 
   const total = artists.length + events.length;
   useEffect(() => setActive(0), [q]);

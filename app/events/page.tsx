@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { CATEGORIES, upcomingEvents } from "@/lib/data";
+import { CATEGORIES } from "@/lib/data";
+import { getEvents } from "@/lib/api";
 import type { Category } from "@/lib/types";
 import { ExploreClient } from "@/components/ExploreClient";
 
@@ -14,7 +15,7 @@ export default async function EventsPage({
   searchParams: Promise<{ category?: string }>;
 }) {
   const sp = await searchParams;
-  const events = upcomingEvents();
+  const { events } = await getEvents({ sort: "date", limit: 50 });
   const initial = CATEGORIES.includes(sp.category as Category)
     ? (sp.category as Category)
     : "All";
