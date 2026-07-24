@@ -8,8 +8,8 @@ import {
   useRef,
   useState,
 } from "react";
-import type { EventItem, Order } from "./types";
-import { getEvent } from "./data";
+import type { Order } from "./types";
+import { authClient, API_URL } from "./auth-client";
 
 const KEY = "empire-user-v1";
 
@@ -23,10 +23,10 @@ export interface Profile {
   notifyReminders: boolean;
 }
 
+// Local-only state. Saved events, artist subscriptions and orders stay in
+// localStorage until those BE modules are connected; identity (signedIn,
+// profile) comes from the better-auth session + GET /api/v1/me.
 interface Persisted {
-  signedIn: boolean;
-  seeded: boolean;
-  profile: Profile;
   savedSlugs: string[];
   subscribedArtists: string[];
   orders: Order[];
@@ -34,7 +34,8 @@ interface Persisted {
 
 interface UserValue extends Persisted {
   hydrated: boolean;
-  signIn: (email: string) => void;
+  signedIn: boolean;
+  profile: Profile;
   signOut: () => void;
   updateProfile: (patch: Partial<Profile>) => void;
   toggleSaved: (slug: string) => void;
@@ -54,9 +55,6 @@ const emptyProfile: Profile = {
 };
 
 const empty: Persisted = {
-  signedIn: false,
-  seeded: false,
-  profile: emptyProfile,
   savedSlugs: [],
   subscribedArtists: [],
   orders: [],
@@ -64,64 +62,23 @@ const empty: Persisted = {
 
 const Ctx = createContext<UserValue | null>(null);
 
-function rand(len: number) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "";
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
-
-function nameFromEmail(email: string) {
-  const first = email.split("@")[0].replace(/[._-]+/g, " ").trim().split(" ")[0] || "You";
-  return first.charAt(0).toUpperCase() + first.slice(1);
-}
-
-/** Build a plausible order from an event (used to seed the demo account). */
-function demoOrder(event: EventItem, tierId: string, qty: number, holder: string, email: string): Order {
-  const tier = event.tiers.find((t) => t.id === tierId) ?? event.tiers.find((t) => !t.soldOut)!;
-  const subtotal = tier.price * qty;
-  const fees = tier.fee * qty;
-  return {
-    code: `EMP-${rand(4)}-${rand(4)}`,
-    eventSlug: event.slug,
-    eventTitle: event.title,
-    lines: [{ tierName: tier.name, qty, price: tier.price }],
-    subtotal,
-    fees,
-    discount: 0,
-    total: subtotal + fees,
-    buyerName: holder,
-    buyerEmail: email,
-    tickets: Array.from({ length: qty }, () => ({
-      code: `${rand(4)}-${rand(4)}`,
-      tierName: tier.name,
-      holder,
-    })),
-  };
-}
-
-function seedContent(email: string): Pick<Persisted, "savedSlugs" | "subscribedArtists" | "orders"> {
-  const name = nameFromEmail(email);
-  const sudbeat = getEvent("sudbeat-showcase-colombo");
-  const orders = sudbeat ? [demoOrder(sudbeat, "final", 2, name, email)] : [];
-  return {
-    savedSlugs: ["kyotto-open-to-close", "flying-dust-nye"],
-    subscribedArtists: ["hernan-cattaneo", "ultra"],
-    orders,
-  };
-}
-
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<Persisted>(empty);
-  const [hydrated, setHydrated] = useState(false);
+  const [storageHydrated, setStorageHydrated] = useState(false);
+  // Profile fetched from /api/v1/me, keyed by user so a stale fetch never
+  // bleeds across sign-ins. The exposed profile derives from the session.
+  const [remote, setRemote] = useState<{ userId: string; profile: Profile } | null>(null);
   const first = useRef(true);
+
+  const { data: session, isPending } = authClient.useSession();
+  const signedIn = Boolean(session);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) setState({ ...empty, ...JSON.parse(raw) });
     } catch {}
-    setHydrated(true);
+    setStorageHydrated(true);
   }, []);
 
   useEffect(() => {
@@ -134,35 +91,54 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [state]);
 
-  const signIn = useCallback((email: string) => {
-    setState((s) => {
-      const profile = {
-        ...s.profile,
-        email,
-        name: s.profile.name || nameFromEmail(email),
-      };
-      if (!s.seeded) {
-        const seed = seedContent(email);
-        return {
-          ...s,
-          signedIn: true,
-          seeded: true,
-          profile,
-          savedSlugs: [...new Set([...s.savedSlugs, ...seed.savedSlugs])],
-          subscribedArtists: [...new Set([...s.subscribedArtists, ...seed.subscribedArtists])],
-          orders: [...s.orders, ...seed.orders],
+  // Profile follows the session: fetch the canonical shape from /api/v1/me
+  // once signed in.
+  useEffect(() => {
+    if (!session?.user) return;
+    const { id: userId, name, email, image } = session.user;
+    let cancelled = false;
+    (async () => {
+      let profile: Profile;
+      try {
+        const res = await fetch(`${API_URL}/api/v1/me`, {
+          credentials: "include",
+        });
+        if (!res.ok) throw new Error(`GET /me ${res.status}`);
+        const body = (await res.json()) as { data: { profile: Profile } };
+        profile = body.data.profile;
+      } catch {
+        // Session exists but /me failed — fall back to the session user.
+        profile = {
+          ...emptyProfile,
+          name: name ?? "",
+          email: email ?? "",
+          ...(image ? { picture: image } : {}),
         };
       }
-      return { ...s, signedIn: true, profile };
-    });
-  }, []);
+      if (!cancelled) setRemote({ userId, profile });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user]);
+
+  const profileLoaded = Boolean(session && remote?.userId === session.user.id);
+  const profile: Profile =
+    signedIn && profileLoaded ? remote!.profile : emptyProfile;
 
   const signOut = useCallback(() => {
-    setState((s) => ({ ...s, signedIn: false }));
+    void authClient.signOut();
   }, []);
 
   const updateProfile = useCallback((patch: Partial<Profile>) => {
-    setState((s) => ({ ...s, profile: { ...s.profile, ...patch } }));
+    // Optimistic local update; persist to the BE in the background.
+    setRemote((r) => (r ? { ...r, profile: { ...r.profile, ...patch } } : r));
+    void fetch(`${API_URL}/api/v1/me`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).catch(() => {});
   }, []);
 
   const toggleSaved = useCallback((slug: string) => {
@@ -193,8 +169,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const value: UserValue = {
     ...state,
-    hydrated,
-    signIn,
+    hydrated: storageHydrated && !isPending && (!signedIn || profileLoaded),
+    signedIn,
+    profile,
     signOut,
     updateProfile,
     toggleSaved,
