@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCheckout } from "@/lib/checkout";
+import { useUser } from "@/lib/user";
 import { TicketIcon } from "./Icons";
 
 export function GetTicketsButton({
@@ -15,10 +16,15 @@ export function GetTicketsButton({
 }) {
   const router = useRouter();
   const { startCheckout } = useCheckout();
+  const { signedIn } = useUser();
 
   function go() {
+    // Start the checkout either way — it survives the sign-in round trip in
+    // sessionStorage, so the user lands back on their ticket selection.
     startCheckout(slug);
-    router.push("/checkout/tickets");
+    router.push(
+      signedIn ? "/checkout/tickets" : "/signin?next=/checkout/tickets",
+    );
   }
 
   return (
