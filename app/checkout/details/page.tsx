@@ -1,14 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout } from "@/lib/checkout";
+import { useUser } from "@/lib/user";
 import { CheckoutShell } from "@/components/CheckoutShell";
 import { ArrowRightIcon, CheckCircleIcon } from "@/components/Icons";
 
 export default function DetailsStep() {
   const router = useRouter();
   const { buyer, setBuyer, totals } = useCheckout();
+  const { hydrated, signedIn, profile } = useUser();
+
+  // The sign-in step is gone: the buyer email comes from the session now.
+  useEffect(() => {
+    if (hydrated && signedIn && profile.email && buyer.email !== profile.email) {
+      setBuyer({ email: profile.email });
+    }
+  }, [hydrated, signedIn, profile.email, buyer.email, setBuyer]);
   const [name, setName] = useState(buyer.name);
   const [phone, setPhone] = useState(buyer.phone);
   const [error, setError] = useState("");
@@ -73,7 +82,7 @@ export default function DetailsStep() {
 
         <div className="mt-6 flex items-center gap-3">
           <button
-            onClick={() => router.push("/checkout/signin")}
+            onClick={() => router.push("/checkout/tickets")}
             className="rounded-xl border border-line px-4 py-3 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover"
           >
             Back

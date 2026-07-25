@@ -19,11 +19,11 @@ export default function SignInStep() {
   const [busy, setBusy] = useState(false);
 
   // Already signed in (e.g. returning from the Google redirect) — carry the
-  // account email into the checkout and skip straight to details.
+  // account email into the checkout and continue to ticket selection.
   useEffect(() => {
     if (hydrated && signedIn && profile.email) {
       setBuyer({ email: profile.email });
-      router.replace("/checkout/details");
+      router.replace("/checkout/tickets");
     }
   }, [hydrated, signedIn, profile.email, setBuyer, router]);
 
@@ -31,7 +31,7 @@ export default function SignInStep() {
     setError("");
     setBusy(true);
     // Full-page redirect to Google; better-auth lands back on this step,
-    // which then forwards to details with the account email applied.
+    // which then forwards to ticket selection with the account email applied.
     const { error: err } = await authClient.signIn.social({
       provider: "google",
       callbackURL: `${window.location.origin}/checkout/signin`,
@@ -76,12 +76,11 @@ export default function SignInStep() {
       return;
     }
     setBuyer({ email });
-    router.push("/checkout/details");
+    router.push("/checkout/tickets");
   }
 
   return (
     <CheckoutShell
-      step="signin"
       title="Sign in to continue"
       subtitle="We'll send your tickets and receipt here."
     >
