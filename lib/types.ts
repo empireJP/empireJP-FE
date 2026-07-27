@@ -44,6 +44,7 @@ export interface EventItem {
   description: string[];
   tiers: TicketTier[];
   image: string; // cover image path under /public
+  trailerUrl?: string; // mp4/webm URL, or a YouTube/Vimeo link
   accent: string; // dominant color for small solid accents
   attending: number;
   capacity: number;
