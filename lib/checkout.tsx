@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import type { EventItem, Order } from "./types";
-import { getEvent } from "./data";
+import { getEvent } from "./api";
 
 const KEY = "pulse-checkout-v1";
 
@@ -40,6 +40,7 @@ interface Totals {
 interface CheckoutValue extends Persisted {
   hydrated: boolean;
   event: EventItem | null;
+  eventLoading: boolean;
   totals: Totals;
   startCheckout: (slug: string, initial?: Record<string, number>) => void;
   setQty: (tierId: string, qty: number) => void;
@@ -109,7 +110,34 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [state]);
 
-  const event = state.eventSlug ? getEvent(state.eventSlug) ?? null : null;
+  // The event lives in the API, not in the bundle — resolve it from the
+  // persisted slug and keep the steps in a loading state until it lands.
+  const [event, setEvent] = useState<EventItem | null>(null);
+  const [eventLoading, setEventLoading] = useState(false);
+
+  useEffect(() => {
+    const slug = state.eventSlug;
+    if (!slug) {
+      setEvent(null);
+      setEventLoading(false);
+      return;
+    }
+    let stale = false;
+    setEventLoading(true);
+    getEvent(slug)
+      .then((e) => {
+        if (!stale) setEvent(e ?? null);
+      })
+      .catch(() => {
+        if (!stale) setEvent(null);
+      })
+      .finally(() => {
+        if (!stale) setEventLoading(false);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [state.eventSlug]);
 
   const totals = useMemo<Totals>(() => {
     let count = 0;
@@ -219,6 +247,7 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     ...state,
     hydrated,
     event,
+    eventLoading,
     totals,
     startCheckout,
     setQty,
