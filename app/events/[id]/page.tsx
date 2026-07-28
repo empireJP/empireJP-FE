@@ -5,6 +5,7 @@ import { getEvent } from "@/lib/api";
 import { artistsOnEvent } from "@/lib/artists";
 import { EventCover } from "@/components/EventCover";
 import { GetTicketsButton } from "@/components/GetTicketsButton";
+import { TrailerButton } from "@/components/TrailerButton";
 import { fromPrice } from "@/components/EventCard";
 import {
   ArrowLeftIcon,
@@ -63,6 +64,8 @@ export default async function EventPage({
             rounded="rounded-3xl"
             priority
           />
+
+          <TrailerButton url={event.trailerUrl} title={event.title} />
 
           <div className="mt-5 rounded-2xl border border-line bg-surface p-4">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-faint">
