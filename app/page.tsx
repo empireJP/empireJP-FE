@@ -19,6 +19,7 @@ const SOCIALS = [
     name: "Facebook",
     handle: "/empireevents",
     cta: "Follow",
+    color: "#1877F2",
     href: "https://www.facebook.com/",
     Icon: FacebookIcon,
   },
@@ -26,6 +27,7 @@ const SOCIALS = [
     name: "Instagram",
     handle: "@empireevents",
     cta: "Follow",
+    color: "#E4405F",
     href: "https://www.instagram.com/",
     Icon: InstagramIcon,
   },
@@ -33,6 +35,7 @@ const SOCIALS = [
     name: "WhatsApp Channel",
     handle: "Empire Events",
     cta: "Join",
+    color: "#25D366",
     href: "https://www.whatsapp.com/",
     Icon: WhatsappIcon,
   },
@@ -158,10 +161,12 @@ export default async function Home() {
               rel="noopener noreferrer"
               className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-surface p-4 transition-all duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-[0_8px_30px_rgb(255_255_255_/_0.06)]"
             >
+              {/* brand-colored glyph, borderless on the card */}
               <s.Icon
                 width={24}
                 height={24}
-                className="shrink-0 text-gray-400 transition-colors duration-300 group-hover:text-white"
+                style={{ color: s.color }}
+                className="shrink-0 transition-all duration-300 group-hover:brightness-125"
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold text-white">{s.name}</p>
