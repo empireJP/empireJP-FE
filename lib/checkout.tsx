@@ -11,6 +11,9 @@ import {
 } from "react";
 import type { EventItem, Order } from "./types";
 import { getEvent } from "./api";
+import { createLogger } from "./logger";
+
+const log = createLogger("checkout");
 
 const KEY = "pulse-checkout-v1";
 
@@ -126,10 +129,23 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     setEventLoading(true);
     getEvent(slug)
       .then((e) => {
-        if (!stale) setEvent(e ?? null);
+        // Nothing is logged for a stale result: the user has already moved to
+        // another event, and reporting the abandoned one reads as a failure
+        // that never affected them.
+        if (stale) return;
+        setEvent(e ?? null);
+        // A null event renders the checkout's "Your cart is empty" state,
+        // which reads like the user did nothing wrong — say what actually
+        // happened, because the UI cannot.
+        if (!e) log.warn("event not found for checkout", { slug });
       })
-      .catch(() => {
-        if (!stale) setEvent(null);
+      .catch((err) => {
+        if (stale) return;
+        setEvent(null);
+        log.error("could not resolve the checkout event", {
+          slug,
+          cause: err instanceof Error ? err.message : String(err),
+        });
       })
       .finally(() => {
         if (!stale) setEventLoading(false);
