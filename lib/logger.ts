@@ -18,7 +18,18 @@
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "silent";
 export type AppStage = "local" | "dev" | "prod";
 
-const STAGE: AppStage = (process.env.NEXT_PUBLIC_APP_ENV as AppStage) || "local";
+// The BE validates its equivalents with zod and refuses to boot on a typo.
+// There is no such gate here, so both vars are checked by hand — and a value
+// that is *set but not recognised* (NEXT_PUBLIC_APP_ENV="production", say)
+// falls back to the quietest behaviour rather than the loudest. Failing open
+// would mean a typo in the deploy config ships debug logging to every visitor.
+const RAW_STAGE = process.env.NEXT_PUBLIC_APP_ENV;
+const STAGE: AppStage =
+  RAW_STAGE === "local" || RAW_STAGE === "dev" || RAW_STAGE === "prod"
+    ? RAW_STAGE
+    : RAW_STAGE
+      ? "prod"
+      : "local";
 
 const RANK: Record<LogLevel, number> = {
   trace: 10,
@@ -37,10 +48,13 @@ const DEFAULT_LEVEL: Record<AppStage, LogLevel> = {
   prod: "warn",
 };
 
+const RAW_LEVEL = process.env.NEXT_PUBLIC_LOG_LEVEL;
+// Same rule: an unrecognised level is ignored in favour of the stage default,
+// never treated as "log everything".
 const LEVEL: LogLevel =
-  (process.env.NEXT_PUBLIC_LOG_LEVEL as LogLevel) || DEFAULT_LEVEL[STAGE] || "debug";
+  RAW_LEVEL && RAW_LEVEL in RANK ? (RAW_LEVEL as LogLevel) : DEFAULT_LEVEL[STAGE];
 
-const THRESHOLD = RANK[LEVEL] ?? RANK.debug;
+const THRESHOLD = RANK[LEVEL];
 
 /** Next runs the same modules in two places; which one decides the format. */
 const onServer = typeof window === "undefined";
