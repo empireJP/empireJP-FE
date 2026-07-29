@@ -17,9 +17,12 @@ import { createLogger } from "./logger";
 
 const log = createLogger("payhere");
 
-/** The global the SDK installs. Only the members we use are typed. */
+/** The global the SDK installs. Only the members we use are typed.
+ *  `sandbox` is the one non-string member of the payment object — it is how
+ *  the SDK is pointed at PayHere's test estate (there is no separate sandbox
+ *  script; /lib/payhere.js only exists on the live host). */
 interface PayHereSdk {
-  startPayment(payment: Record<string, string>): void;
+  startPayment(payment: Record<string, string | boolean>): void;
   onCompleted?: (orderId: string) => void;
   onDismissed?: () => void;
   onError?: (message: string) => void;
@@ -164,7 +167,9 @@ export async function startPayHerePayment(
 
     log.debug("opening payhere popup", { orderCode, sandbox: instruction.sandbox });
     // Fields are passed through exactly as the API signed them — reordering is
-    // harmless but editing any value invalidates the hash.
-    sdk.startPayment(instruction.fields);
+    // harmless but editing any value invalidates the hash. `sandbox` is the
+    // one addition: it is the SDK's estate switch, not a signed field, and the
+    // API decides it so the two halves of one payment can't disagree.
+    sdk.startPayment({ ...instruction.fields, sandbox: instruction.sandbox });
   });
 }
