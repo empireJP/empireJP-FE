@@ -9,8 +9,8 @@ import {
   useRef,
   useState,
 } from "react";
-import type { EventItem, Order } from "./types";
-import { getEvent } from "./api";
+import type { CreatedOrder, EventItem, Order, PaymentProviderId } from "./types";
+import { createOrder, getEvent, getOrder } from "./api";
 import { createLogger } from "./logger";
 
 const log = createLogger("checkout");
@@ -50,11 +50,41 @@ interface CheckoutValue extends Persisted {
   setBuyer: (patch: Partial<Buyer>) => void;
   applyCoupon: (code: string) => { ok: boolean; error?: string };
   removeCoupon: () => void;
-  placeOrder: () => Order | null;
+  /**
+   * Creates the order on the API and stores it. Resolves with the created
+   * order plus, for hosted gateways, the instruction the browser needs to
+   * launch payment. Rejects on failure — callers show the message.
+   *
+   * The order comes back PENDING: this reserves inventory and prices the cart
+   * server-side, it does not take money.
+   */
+  placeOrder: (paymentProvider: PaymentProviderId) => Promise<CreatedOrder>;
+  /** Re-reads an order from the API and updates state with it. */
+  refreshOrder: (order: OrderRef) => Promise<Order | null>;
+  /**
+   * Polls an order until the gateway's callback marks it PAID. Resolves with
+   * the paid order, with a terminal non-PAID order, or with null if nothing
+   * landed within the timeout — which is not a failure: the callback can still
+   * arrive, and the confirmation page says so.
+   */
+  awaitPaidOrder: (order: OrderRef, opts?: { timeoutMs?: number }) => Promise<Order | null>;
   reset: () => void;
 }
 
-/** Promo codes (case-insensitive). */
+/** Everything needed to read an order back. The email is required because an
+ *  order code is short and human-readable, so the API deliberately won't hand
+ *  one over on the code alone (a session covers signed-in buyers instead). */
+export interface OrderRef {
+  code: string;
+  buyerEmail: string;
+}
+
+/** Promo codes (case-insensitive).
+ *
+ *  These mirror the codes the API seeds, and drive the cart preview only. The
+ *  discount that is actually applied is recomputed server-side from the code
+ *  we send, so a locally-edited value here changes what the buyer is *shown*,
+ *  never what they are charged. */
 const COUPONS: Record<string, { type: "percent" | "fixed"; value: number; label: string }> = {
   RAVE10: { type: "percent", value: 10, label: "RAVE10 · 10% off" },
   EMPIRE20: { type: "percent", value: 20, label: "EMPIRE20 · 20% off" },
@@ -79,14 +109,14 @@ const empty: Persisted = {
 
 const Ctx = createContext<CheckoutValue | null>(null);
 
-function randCode(len: number) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "";
-  for (let i = 0; i < len; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return out;
-}
+/** How often the confirmation page asks the API whether the gateway callback
+ *  has landed. Two seconds is well inside the API's inventory hold and slow
+ *  enough that a stuck payment doesn't hammer the server. */
+const ORDER_POLL_INTERVAL_MS = 2_000;
+/** How long to keep waiting before telling the buyer it's taking longer than
+ *  usual. Deliberately not a failure: a delayed callback still arrives, and
+ *  their order still holds its seats. */
+const ORDER_POLL_TIMEOUT_MS = 90_000;
 
 export function CheckoutProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<Persisted>(empty);
@@ -211,51 +241,94 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     setState((s) => ({ ...s, coupon: null }));
   }, []);
 
-  const placeOrder = useCallback((): Order | null => {
-    if (!event) return null;
-    const lines = event.tiers
-      .filter((t) => (state.lines[t.id] ?? 0) > 0)
-      .map((t) => ({
-        tierName: t.name,
-        qty: state.lines[t.id],
-        price: t.price,
-      }));
-    if (lines.length === 0) return null;
+  const placeOrder = useCallback(
+    async (paymentProvider: PaymentProviderId): Promise<CreatedOrder> => {
+      if (!event) throw new Error("Your cart is no longer available.");
 
-    let subtotal = 0;
-    let fees = 0;
-    const tickets: Order["tickets"] = [];
-    for (const t of event.tiers) {
-      const qty = state.lines[t.id] ?? 0;
-      subtotal += qty * t.price;
-      fees += qty * t.fee;
-      for (let i = 0; i < qty; i++) {
-        tickets.push({
-          code: `${randCode(4)}-${randCode(4)}`,
-          tierName: t.name,
-          holder: state.buyer.name || "Guest",
-        });
-      }
+      // Tier ids and quantities only. Prices, fees and the coupon discount are
+      // all recomputed by the API from its own catalog — nothing the browser
+      // says about money is trusted, which is also why the totals rendered in
+      // the summary are a preview rather than an input.
+      const lines = event.tiers
+        .filter((t) => (state.lines[t.id] ?? 0) > 0)
+        .map((t) => ({ tierId: t.id, qty: state.lines[t.id]! }));
+      if (lines.length === 0) throw new Error("Your cart is empty.");
+
+      const created = await createOrder({
+        eventSlug: event.slug,
+        lines,
+        buyer: {
+          name: state.buyer.name || "Guest",
+          email: state.buyer.email,
+          ...(state.buyer.phone ? { phone: state.buyer.phone } : {}),
+        },
+        ...(state.coupon ? { couponCode: state.coupon } : {}),
+        paymentProvider,
+      });
+
+      log.info("order created", {
+        code: created.code,
+        status: created.status,
+        provider: created.paymentProvider,
+      });
+      setState((s) => ({ ...s, order: created }));
+      return created;
+    },
+    [event, state.lines, state.buyer, state.coupon],
+  );
+
+  // Both take the order explicitly rather than reading it out of state. The
+  // caller that needs them most — the payment step — calls them in the same
+  // tick as placeOrder(), before React has committed the new state, so
+  // anything reading from state (or a ref synced to it) would see the previous
+  // order or none at all.
+  const refreshOrder = useCallback(async (ref: OrderRef): Promise<Order | null> => {
+    try {
+      const fresh = await getOrder(ref.code, ref.buyerEmail);
+      setState((s) => (s.order?.code === fresh.code ? { ...s, order: { ...s.order, ...fresh } } : s));
+      return fresh;
+    } catch (err) {
+      // The buyer is left looking at a stale PENDING order with no explanation
+      // — lib/api logged the request itself, this says what it cost us.
+      log.warn("could not refresh the order", {
+        code: ref.code,
+        cause: err instanceof Error ? err.message : String(err),
+      });
+      return null;
     }
+  }, []);
 
-    const discount = couponDiscount(state.coupon, subtotal);
-    const order: Order = {
-      code: `EMP-${randCode(4)}-${randCode(4)}`,
-      eventSlug: event.slug,
-      eventTitle: event.title,
-      lines,
-      subtotal,
-      fees,
-      discount,
-      couponCode: state.coupon ?? undefined,
-      total: Math.max(0, subtotal + fees - discount),
-      buyerName: state.buyer.name || "Guest",
-      buyerEmail: state.buyer.email,
-      tickets,
-    };
-    setState((s) => ({ ...s, order }));
-    return order;
-  }, [event, state.lines, state.buyer, state.coupon]);
+  const awaitPaidOrder = useCallback(
+    async (ref: OrderRef, { timeoutMs = ORDER_POLL_TIMEOUT_MS } = {}): Promise<Order | null> => {
+      const started = Date.now();
+      // Poll rather than trust the gateway's client-side "completed" callback:
+      // the order becomes PAID when the gateway's server calls ours, which can
+      // land before, during or shortly after the buyer closes the popup.
+      while (Date.now() - started < timeoutMs) {
+        const fresh = await refreshOrder(ref);
+        if (fresh?.status === "PAID") {
+          log.info("order confirmed paid", { code: ref.code, waitedMs: Date.now() - started });
+          return fresh;
+        }
+        // A terminal non-PAID status will never become PAID — stop early
+        // rather than spinning for the full timeout.
+        if (fresh && fresh.status !== "PENDING") {
+          log.warn("order reached a terminal status without being paid", {
+            code: ref.code,
+            status: fresh.status,
+          });
+          return fresh;
+        }
+        await new Promise((r) => setTimeout(r, ORDER_POLL_INTERVAL_MS));
+      }
+      // Not an error: gateway callbacks can be slow, and the confirmation page
+      // keeps waiting. But it IS the shape of a broken notify URL, so it must
+      // leave a trace.
+      log.warn("order still pending after the polling window", { code: ref.code, timeoutMs });
+      return null;
+    },
+    [refreshOrder],
+  );
 
   const reset = useCallback(() => setState(empty), []);
 
@@ -271,6 +344,8 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     applyCoupon,
     removeCoupon,
     placeOrder,
+    refreshOrder,
+    awaitPaidOrder,
     reset,
   };
 
