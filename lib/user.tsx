@@ -10,6 +10,9 @@ import {
 } from "react";
 import type { Order } from "./types";
 import { authClient, API_URL } from "./auth-client";
+import { createLogger } from "./logger";
+
+const log = createLogger("user");
 
 const KEY = "empire-user-v1";
 
@@ -114,8 +117,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         };
         profile = body.data.profile;
         savedSlugs = body.data.savedSlugs;
-      } catch {
-        // Session exists but /me failed — fall back to the session user.
+      } catch (err) {
+        // Session exists but /me failed — fall back to the session user. The
+        // fallback is convincing enough that nobody notices the profile is a
+        // stub and the saved list is empty rather than genuinely empty.
+        log.error("/me failed; falling back to the session user", {
+          cause: err instanceof Error ? err.message : String(err),
+        });
         profile = {
           ...emptyProfile,
           name: name ?? "",
@@ -149,7 +157,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
-    }).catch(() => {});
+    }).catch((err) => {
+      // The optimistic update stays on screen, so a failure here looks like a
+      // save that worked and silently didn't survive the next reload.
+      log.error("profile update was not persisted", {
+        fields: Object.keys(patch),
+        cause: err instanceof Error ? err.message : String(err),
+      });
+    });
   }, []);
 
   const toggleSaved = useCallback(
@@ -174,7 +189,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         .then((res) => {
           if (!res.ok) throw new Error(`${res.status}`);
         })
-        .catch(() => {
+        .catch((err) => {
+          log.warn("save toggle failed; reverting", {
+            slug: ev.slug,
+            wasSaved,
+            cause: err instanceof Error ? err.message : String(err),
+          });
           // Revert the optimistic change — for this user's state only.
           setRemote((r) => {
             if (!r || r.userId !== userId) return r;
