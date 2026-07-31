@@ -1,7 +1,15 @@
 "use client";
 
+// Confirmation. This page is reached as soon as the buyer is done with the
+// payment popup — which is *before* we know whether they paid.
+//
+// An order becomes PAID only when the gateway's server-to-server callback
+// reaches our API, so this page keeps polling until it does. Until then it
+// shows a processing state rather than the celebration: telling someone
+// they're going and then discovering the payment failed is far worse than
+// making them wait a few seconds.
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCheckout } from "@/lib/checkout";
 import { useUser } from "@/lib/user";
 import { CheckoutShell } from "@/components/CheckoutShell";
@@ -14,6 +22,9 @@ import {
   ShareIcon,
 } from "@/components/Icons";
 import { dateLong, money, to12h } from "@/lib/format";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("checkout.confirmation");
 
 function gcalUrl(title: string, iso: string, endTime: string, location: string) {
   const start = new Date(iso);
@@ -36,17 +47,82 @@ function gcalUrl(title: string, iso: string, endTime: string, location: string) 
 }
 
 export default function ConfirmationStep() {
-  const { event, order } = useCheckout();
+  const { event, order, awaitPaidOrder } = useCheckout();
   const { addOrder } = useUser();
 
-  // save the completed order to the buyer's account (dedups by code)
+  const paid = order?.status === "PAID";
+  // A status that will never become PAID (EXPIRED, CANCELLED). Treated apart
+  // from "still waiting" because the buyer's next action is different.
+  const settledUnpaid = Boolean(order && order.status && order.status !== "PENDING" && !paid);
+  const [gaveUpWaiting, setGaveUpWaiting] = useState(false);
+
+  // Keep asking the API until the gateway callback lands. Guarded by a ref so
+  // React's double-invoked effects don't start two polling loops.
+  const polling = useRef(false);
   useEffect(() => {
-    if (order) addOrder(order);
-  }, [order, addOrder]);
+    if (!order || paid || settledUnpaid || polling.current) return;
+    polling.current = true;
+    void awaitPaidOrder(order).then((result) => {
+      polling.current = false;
+      if (result?.status === "PAID") return;
+      // Not a failure — a slow callback still arrives, and the order still
+      // holds its seats. But a *persistent* one of these is what a broken
+      // notify URL looks like from the buyer's side, so it gets a line.
+      log.warn("order not confirmed within the polling window", {
+        code: order.code,
+        status: result?.status ?? order.status,
+      });
+      setGaveUpWaiting(true);
+    });
+  }, [order, paid, settledUnpaid, awaitPaidOrder]);
+
+  // Save to the buyer's account only once it is actually paid — an unpaid
+  // order in the tickets tab is a support ticket waiting to happen.
+  useEffect(() => {
+    if (order && paid) addOrder(order);
+  }, [order, paid, addOrder]);
 
   return (
     <CheckoutShell step="confirmation" title="" hideSummary requireOrder>
-      {order && event && (
+      {order && !paid && (
+        <div className="mx-auto max-w-md py-10 text-center">
+          <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-surface-2">
+            {settledUnpaid ? (
+              <MailIcon width={30} height={30} className="text-muted" />
+            ) : (
+              <span className="h-7 w-7 animate-spin rounded-full border-2 border-line border-t-accent" />
+            )}
+          </span>
+          <h1 className="mt-5 text-2xl font-bold tracking-tight text-fg">
+            {settledUnpaid ? "This order didn't complete" : "Confirming your payment…"}
+          </h1>
+          <p className="mt-2 text-muted">
+            {settledUnpaid
+              ? "No payment was taken. You can start again and your tickets will be re-checked for availability."
+              : gaveUpWaiting
+                ? "This is taking longer than usual. Your payment may still be going through — keep this page open, and check your email in a few minutes."
+                : "Your bank is confirming the payment. This usually takes a few seconds."}
+          </p>
+          <div className="mt-5 rounded-2xl border border-line bg-surface-2 px-4 py-3 text-sm">
+            <span className="text-faint">Order </span>
+            <span className="font-mono font-semibold text-fg">{order.code}</span>
+          </div>
+          <p className="mt-4 text-xs text-faint">
+            Don&rsquo;t refresh or close this page — nothing is lost if you do, but the
+            confirmation lands here first.
+          </p>
+          {settledUnpaid && (
+            <Link
+              href={`/events/${order.eventSlug}`}
+              className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-fg transition-colors hover:bg-primary-hover"
+            >
+              Try again
+            </Link>
+          )}
+        </div>
+      )}
+
+      {order && paid && event && (
         <div className="animate-pop-in mx-auto max-w-xl">
           <div className="text-center">
             <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-success-soft text-success">
