@@ -6,12 +6,12 @@ import { artistsOnEvent } from "@/lib/artists";
 import { EventCover } from "@/components/EventCover";
 import { GetTicketsButton } from "@/components/GetTicketsButton";
 import { TrailerButton } from "@/components/TrailerButton";
+import { VenueMap } from "@/components/VenueMap";
 import { fromPrice } from "@/components/EventCard";
 import {
   ArrowLeftIcon,
   CheckCircleIcon,
   ClockIcon,
-  GlobeIcon,
   PinIcon,
   ShareIcon,
   TicketIcon,
@@ -248,30 +248,7 @@ export default async function EventPage({
             <h2 className="text-lg font-semibold text-fg">Location</h2>
             <p className="mt-2 font-medium text-fg">{event.venue}</p>
             <p className="text-sm text-muted">{event.area}, {event.city}</p>
-            <div className="relative mt-4 h-48 overflow-hidden rounded-2xl border border-line">
-              <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface-3))" }} />
-              <div
-                className="absolute inset-0 opacity-70"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)",
-                  backgroundSize: "34px 34px",
-                }}
-              />
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                <span className="grid h-9 w-9 place-items-center rounded-full bg-accent text-white shadow-[var(--shadow-pop)] ring-4 ring-[color-mix(in_srgb,var(--accent)_30%,transparent)]">
-                  <PinIcon width={18} height={18} />
-                </span>
-              </div>
-              <a
-                href={`https://maps.google.com/?q=${encodeURIComponent(`${event.venue} ${event.area} ${event.city}`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-lg bg-surface/90 px-2.5 py-1.5 text-xs font-semibold text-fg backdrop-blur-sm transition-colors hover:bg-surface"
-              >
-                <GlobeIcon width={14} height={14} /> Open in Maps
-              </a>
-            </div>
+            <VenueMap venue={event.venue} area={event.area} city={event.city} />
           </section>
         </div>
       </div>
