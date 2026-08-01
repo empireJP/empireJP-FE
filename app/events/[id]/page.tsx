@@ -1,25 +1,22 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { EVENTS, getEvent } from "@/lib/data";
+import { getEvent } from "@/lib/api";
 import { artistsOnEvent } from "@/lib/artists";
 import { EventCover } from "@/components/EventCover";
 import { GetTicketsButton } from "@/components/GetTicketsButton";
+import { TrailerButton } from "@/components/TrailerButton";
+import { VenueMap } from "@/components/VenueMap";
 import { fromPrice } from "@/components/EventCard";
 import {
   ArrowLeftIcon,
   CheckCircleIcon,
   ClockIcon,
-  GlobeIcon,
   PinIcon,
   ShareIcon,
   TicketIcon,
 } from "@/components/Icons";
 import { calendarParts, dateLong, money, to12h } from "@/lib/format";
-
-export function generateStaticParams() {
-  return EVENTS.map((e) => ({ id: e.slug }));
-}
 
 export async function generateMetadata({
   params,
@@ -27,7 +24,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const e = getEvent(id);
+  const e = await getEvent(id);
   if (!e) return { title: "Event not found — Empire Events" };
   return { title: `${e.title} · ${e.venue} — Empire Events`, description: e.tagline };
 }
@@ -38,7 +35,7 @@ export default async function EventPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const event = getEvent(id);
+  const event = await getEvent(id);
   if (!event) notFound();
 
   const cal = calendarParts(event.date);
@@ -67,6 +64,8 @@ export default async function EventPage({
             rounded="rounded-3xl"
             priority
           />
+
+          <TrailerButton url={event.trailerUrl} title={event.title} />
 
           <div className="mt-5 rounded-2xl border border-line bg-surface p-4">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-faint">
@@ -249,30 +248,7 @@ export default async function EventPage({
             <h2 className="text-lg font-semibold text-fg">Location</h2>
             <p className="mt-2 font-medium text-fg">{event.venue}</p>
             <p className="text-sm text-muted">{event.area}, {event.city}</p>
-            <div className="relative mt-4 h-48 overflow-hidden rounded-2xl border border-line">
-              <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface-3))" }} />
-              <div
-                className="absolute inset-0 opacity-70"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)",
-                  backgroundSize: "34px 34px",
-                }}
-              />
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                <span className="grid h-9 w-9 place-items-center rounded-full bg-accent text-white shadow-[var(--shadow-pop)] ring-4 ring-[color-mix(in_srgb,var(--accent)_30%,transparent)]">
-                  <PinIcon width={18} height={18} />
-                </span>
-              </div>
-              <a
-                href={`https://maps.google.com/?q=${encodeURIComponent(`${event.venue} ${event.area} ${event.city}`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-lg bg-surface/90 px-2.5 py-1.5 text-xs font-semibold text-fg backdrop-blur-sm transition-colors hover:bg-surface"
-              >
-                <GlobeIcon width={14} height={14} /> Open in Maps
-              </a>
-            </div>
+            <VenueMap venue={event.venue} area={event.area} city={event.city} />
           </section>
         </div>
       </div>

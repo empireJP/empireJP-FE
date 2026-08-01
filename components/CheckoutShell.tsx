@@ -16,7 +16,8 @@ export function CheckoutShell({
   hideSummary = false,
   requireOrder = false,
 }: {
-  step: StepKey;
+  /** Omitted on the sign-in gate, which sits outside the numbered steps. */
+  step?: StepKey;
   title: string;
   subtitle?: string;
   children: React.ReactNode;
@@ -24,9 +25,9 @@ export function CheckoutShell({
   hideSummary?: boolean;
   requireOrder?: boolean;
 }) {
-  const { hydrated, event, order } = useCheckout();
+  const { hydrated, event, eventLoading, order } = useCheckout();
 
-  if (!hydrated) {
+  if (!hydrated || eventLoading) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6">
         <div className="h-6 w-40 animate-pulse rounded bg-surface-2" />
@@ -60,9 +61,11 @@ export function CheckoutShell({
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-      <div className="mb-8 overflow-x-auto">
-        <CheckoutStepper current={step} />
-      </div>
+      {step && (
+        <div className="mb-8 overflow-x-auto">
+          <CheckoutStepper current={step} />
+        </div>
+      )}
 
       <div
         className={

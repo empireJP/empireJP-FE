@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout } from "@/lib/checkout";
+import { useUser } from "@/lib/user";
 import { CheckoutShell } from "@/components/CheckoutShell";
 import { QtyStepper } from "@/components/QtyStepper";
 import { ArrowRightIcon } from "@/components/Icons";
@@ -10,6 +12,14 @@ import { money } from "@/lib/format";
 export default function TicketsStep() {
   const router = useRouter();
   const { event, lines, setQty, totals } = useCheckout();
+  const { hydrated, signedIn } = useUser();
+
+  // Checkout requires a session — deep links land on the sign-in gate first.
+  useEffect(() => {
+    if (hydrated && !signedIn) {
+      router.replace("/checkout/signin");
+    }
+  }, [hydrated, signedIn, router]);
 
   return (
     <CheckoutShell
@@ -24,7 +34,7 @@ export default function TicketsStep() {
               : `${totals.count} ticket${totals.count > 1 ? "s" : ""} · ${money(totals.total)} total`}
           </p>
           <button
-            onClick={() => router.push("/checkout/signin")}
+            onClick={() => router.push("/checkout/details")}
             disabled={totals.count === 0}
             className="flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-fg transition-all hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >

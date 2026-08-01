@@ -44,6 +44,7 @@ export interface EventItem {
   description: string[];
   tiers: TicketTier[];
   image: string; // cover image path under /public
+  trailerUrl?: string; // mp4/webm URL, or a YouTube/Vimeo link
   accent: string; // dominant color for small solid accents
   attending: number;
   capacity: number;
@@ -57,6 +58,10 @@ export interface CartLine {
 
 export interface Order {
   code: string;
+  /** Server-owned lifecycle. PENDING until the gateway's callback lands, so
+   *  the confirmation page polls on it rather than assuming success. Tickets
+   *  are `[]` for anything but PAID. */
+  status?: "PENDING" | "PAID" | "EXPIRED" | "CANCELLED" | "REFUNDED" | "PARTIALLY_REFUNDED";
   eventSlug: string;
   eventTitle: string;
   lines: { tierName: string; qty: number; price: number }[];
@@ -68,4 +73,40 @@ export interface Order {
   buyerName: string;
   buyerEmail: string;
   tickets: { code: string; tierName: string; holder: string }[];
+}
+
+/** Gateway ids the API accepts on POST /orders. `mock` completes instantly
+ *  without charging anything and is only offered on non-production servers. */
+export type PaymentProviderId = "payhere" | "mock";
+
+/** One row of GET /payments/methods — what THIS server can actually run.
+ *  Rendering the payment step from this rather than a hardcoded list is what
+ *  stops a build with no PayHere credentials offering "Pay with card" and
+ *  failing at the last possible moment. */
+export interface PaymentMethod {
+  id: PaymentProviderId;
+  label: string;
+  blurb: string;
+  /** True for methods that never move money — the UI must say so. */
+  demo: boolean;
+}
+
+/** How the browser launches a hosted gateway, handed over verbatim by the API
+ *  on POST /orders. `fields` is already signed: pass it through untouched, as
+ *  the hash covers these exact values. Nothing here is secret — the hash is a
+ *  digest derived from the merchant secret and is bound to this one order. */
+export interface PaymentInstruction {
+  kind: "popup" | "redirect";
+  sdkUrl?: string;
+  actionUrl: string;
+  fields: Record<string, string>;
+  /** Pointed at the gateway's test estate — surfaced to the buyer. */
+  sandbox: boolean;
+}
+
+/** POST /orders response: the order, plus what to do next to pay for it. */
+export interface CreatedOrder extends Order {
+  paymentProvider: PaymentProviderId;
+  /** Absent for providers with no buyer-facing step (mock). */
+  payment?: PaymentInstruction;
 }

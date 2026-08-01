@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { CATEGORIES, trendingEvents, upcomingEvents } from "@/lib/data";
+import { CATEGORIES } from "@/lib/data";
+import { getEvents } from "@/lib/api";
 import { ARTISTS } from "@/lib/artists";
 import { HeroSlider } from "@/components/HeroSlider";
 import { HeroBackground } from "@/components/HeroBackground";
@@ -40,10 +41,12 @@ const SOCIALS = [
   },
 ];
 
-export default function Home() {
-  const events = upcomingEvents();
+export default async function Home() {
+  const [{ events }, { events: trending }] = await Promise.all([
+    getEvents({ sort: "date", limit: 50 }),
+    getEvents({ sort: "trending", limit: 6 }),
+  ]);
   const slides = events.slice(0, 7);
-  const trending = trendingEvents(6);
   const tiles = CATEGORIES.map((c) => {
     const list = events.filter((e) => e.category === c);
     return { category: c, event: list[0], count: list.length };
@@ -156,20 +159,20 @@ export default function Home() {
               href={s.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="group flex items-center gap-3 rounded-2xl border border-line bg-surface p-4 shadow-[var(--shadow-card)] transition-all duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-[var(--shadow-pop)]"
+              className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-surface p-4 transition-all duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-[0_8px_30px_rgb(255_255_255_/_0.06)]"
             >
-              {/* brand badge keeps each platform recognizable */}
-              <span
-                className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-white"
-                style={{ backgroundColor: s.color }}
-              >
-                <s.Icon width={22} height={22} />
-              </span>
+              {/* brand-colored glyph, borderless on the card */}
+              <s.Icon
+                width={24}
+                height={24}
+                style={{ color: s.color }}
+                className="shrink-0 transition-all duration-300 group-hover:brightness-125"
+              />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-fg">{s.name}</p>
-                <p className="truncate text-xs text-muted">{s.handle}</p>
+                <p className="truncate font-semibold text-white">{s.name}</p>
+                <p className="truncate text-xs text-gray-400">{s.handle}</p>
               </div>
-              <span className="shrink-0 rounded-full border border-line px-3.5 py-1.5 text-xs font-semibold text-fg transition-colors group-hover:border-transparent group-hover:bg-primary group-hover:text-primary-fg">
+              <span className="shrink-0 rounded-full bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white backdrop-blur-sm transition-colors duration-300 group-hover:bg-white/20">
                 {s.cta}
               </span>
             </a>
