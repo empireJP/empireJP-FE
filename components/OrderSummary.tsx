@@ -5,7 +5,7 @@ import { useCheckout } from "@/lib/checkout";
 import { EventCover } from "./EventCover";
 import { CalendarIcon, CheckIcon, LockIcon, PinIcon, XIcon } from "./Icons";
 import { amount, dateShort, money, to12h } from "@/lib/format";
-import { LIMITS, validateCouponCode } from "@/lib/validation";
+import { validateCouponCode } from "@/lib/validation";
 
 export function OrderSummary() {
   const { event, lines, totals, coupon, applyCoupon, removeCoupon } = useCheckout();
@@ -105,8 +105,8 @@ export function OrderSummary() {
                   setError("");
                 }}
                 placeholder="Promo code"
-                maxLength={LIMITS.coupon.code}
                 aria-invalid={!!error}
+                aria-describedby={error ? "coupon-error" : undefined}
                 className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm uppercase text-fg placeholder:normal-case placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent aria-[invalid=true]:border-danger"
               />
               <button
@@ -118,7 +118,15 @@ export function OrderSummary() {
               </button>
             </form>
           )}
-          {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
+          {error && (
+            <p
+              id="coupon-error"
+              role="alert"
+              className="mt-1.5 text-xs text-danger"
+            >
+              {error}
+            </p>
+          )}
         </div>
       )}
 

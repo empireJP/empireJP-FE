@@ -37,7 +37,7 @@ const APPLE_PAY_VIA: PaymentProviderId = "mock";
 
 export default function PaymentStep() {
   const router = useRouter();
-  const { totals, buyer, placeOrder, awaitPaidOrder } = useCheckout();
+  const { hydrated, totals, buyer, placeOrder, awaitPaidOrder } = useCheckout();
 
   const [methods, setMethods] = useState<PaymentMethod[] | null>(null);
   const [selected, setSelected] = useState<PaymentProviderId | null>(null);
@@ -52,13 +52,17 @@ export default function PaymentStep() {
   // tab or a bookmark lands here with an empty name and a live Pay button.
   // createOrderSchema requires `buyer.name`, so that 422 would surface at the
   // worst possible moment. Send them back to fill it in instead.
+  // `hydrated` is essential, not defensive: the store starts empty and reads
+  // sessionStorage in a mount effect. Passive effects run child-first, so this
+  // effect fires before the provider has restored anything — without the
+  // guard every hard load of this route would bounce to the details step.
   const incompleteBuyer = !buyerIsComplete(buyer);
   useEffect(() => {
-    if (incompleteBuyer && !busy) {
+    if (hydrated && incompleteBuyer && !busy) {
       log.warn("payment step reached without buyer details — redirecting");
       router.replace("/checkout/details");
     }
-  }, [incompleteBuyer, busy, router]);
+  }, [hydrated, incompleteBuyer, busy, router]);
 
   // Which gateways this server can run. An empty list is a legitimate answer
   // (nothing configured) and renders as an explanation, not a crash.

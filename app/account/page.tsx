@@ -22,7 +22,7 @@ import {
   TicketIcon,
 } from "@/components/Icons";
 import { dateLong, money } from "@/lib/format";
-import { LIMITS, hasErrors, validateProfile } from "@/lib/validation";
+import { hasErrors, validateProfile } from "@/lib/validation";
 
 type Tab = "tickets" | "saved" | "following" | "settings";
 
@@ -372,14 +372,23 @@ export default function AccountPage() {
             <div className="rounded-2xl border border-line bg-surface p-5">
               <h2 className="font-semibold text-fg">Profile</h2>
               <div className="mt-4 flex flex-col gap-4">
-                <Field label="Full name" error={shown.name}>
+                {/* No maxLength: it truncates a paste silently, which on a
+                    name means saving something the user never typed. The
+                    length rule lives in validateProfile, where it can speak. */}
+                <Field
+                  label="Full name"
+                  error={shown.name}
+                  errorId="profile-name-error"
+                >
                   <input
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                     className={inputCls}
                     placeholder="Your name"
-                    maxLength={LIMITS.profile.name}
                     aria-invalid={!!shown.name}
+                    aria-describedby={
+                      shown.name ? "profile-name-error" : undefined
+                    }
                   />
                 </Field>
                 {/* Read-only: email is the auth identity, and patchMeSchema
@@ -389,34 +398,48 @@ export default function AccountPage() {
                   label="Email"
                   hint="Your email is how you sign in and can't be changed here."
                 >
+                  {/* readOnly, not disabled: `disabled` drops the field from
+                      the tab order, so a keyboard user could no longer reach
+                      it to read their own address. */}
                   <input
                     type="email"
                     value={form.email}
                     readOnly
-                    disabled
                     className={`${inputCls} cursor-not-allowed opacity-60`}
                     placeholder="you@email.com"
                   />
                 </Field>
                 <div className="grid grid-cols-2 gap-4">
-                  <Field label="Mobile" error={shown.phone}>
+                  <Field
+                    label="Mobile"
+                    error={shown.phone}
+                    errorId="profile-phone-error"
+                  >
                     <input
                       value={form.phone}
                       onChange={(e) => setForm({ ...form, phone: e.target.value })}
                       className={inputCls}
                       placeholder="+94 …"
                       inputMode="tel"
-                      maxLength={LIMITS.profile.phone}
                       aria-invalid={!!shown.phone}
+                      aria-describedby={
+                        shown.phone ? "profile-phone-error" : undefined
+                      }
                     />
                   </Field>
-                  <Field label="City" error={shown.city}>
+                  <Field
+                    label="City"
+                    error={shown.city}
+                    errorId="profile-city-error"
+                  >
                     <input
                       value={form.city}
                       onChange={(e) => setForm({ ...form, city: e.target.value })}
                       className={inputCls}
-                      maxLength={LIMITS.profile.city}
                       aria-invalid={!!shown.city}
+                      aria-describedby={
+                        shown.city ? "profile-city-error" : undefined
+                      }
                     />
                   </Field>
                 </div>
@@ -484,29 +507,42 @@ export default function AccountPage() {
 const inputCls =
   "w-full rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-sm text-fg placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent";
 
+// The message sits *outside* the <label>: text inside a label becomes part of
+// the control's accessible name, so an inline error there makes the field
+// announce as "Full name Name is required." It is linked with
+// aria-describedby instead, which is what screen readers expect.
 function Field({
   label,
   error,
   hint,
+  errorId,
   children,
 }: {
   label: string;
   error?: string;
   hint?: string;
+  /** Must match the input's aria-describedby. */
+  errorId?: string;
   children: React.ReactNode;
 }) {
   return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium text-fg">{label}</span>
-      {children}
+    <div className="flex flex-col gap-1.5">
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-fg">{label}</span>
+        {children}
+      </label>
       {error ? (
-        <span role="alert" className="text-xs font-medium text-danger">
+        <span
+          id={errorId}
+          role="alert"
+          className="text-xs font-medium text-danger"
+        >
           {error}
         </span>
       ) : hint ? (
         <span className="text-xs text-faint">{hint}</span>
       ) : null}
-    </label>
+    </div>
   );
 }
 

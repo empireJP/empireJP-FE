@@ -100,11 +100,18 @@ export function validateProfile(draft: {
 // Checkout — POST /api/v1/orders
 // ---------------------------------------------------------------------------
 
-export type BuyerField = "name" | "phone";
+export type BuyerField = "name" | "phone" | "email";
 
+/**
+ * Must stay the exact complement of `buyerIsComplete`: the details step gates
+ * on this and the payment step gates on that, so any rule in one and not the
+ * other is a redirect loop — Continue succeeds, payment bounces back, forever.
+ * That is why `email` is checked here even though the field isn't editable.
+ */
 export function validateBuyer(draft: {
   name: string;
   phone: string;
+  email: string;
 }): FieldErrors<BuyerField> {
   const { buyer } = LIMITS;
   return collect<BuyerField>([
@@ -117,14 +124,34 @@ export function validateBuyer(draft: {
         : requiredText(draft.name, "Name", buyer.name),
     ],
     ["phone", optionalText(draft.phone, "Mobile number", buyer.phone)],
+    [
+      // Comes from the session, not a field the buyer can edit — so if it is
+      // missing the only honest thing to do is say so rather than let them
+      // walk into a failed order.
+      "email",
+      email(draft.email) === null
+        ? null
+        : "We couldn't read the email address on your account. Sign in again and retry.",
+    ],
   ]);
 }
 
-/** Whether the checkout has enough to create an order. Used to guard the
- *  payment step against back-navigation that skips the details form. */
-export function buyerIsComplete(buyer: { name: string; email: string }) {
-  return (
-    buyer.name.trim().length >= 2 && email(buyer.email) === null
+/**
+ * Whether the checkout has enough to create an order — the payment step's
+ * guard. Defined in terms of `validateBuyer` so the two can never drift; see
+ * the note there.
+ */
+export function buyerIsComplete(buyer: {
+  name: string;
+  email: string;
+  phone?: string;
+}) {
+  return !hasErrors(
+    validateBuyer({
+      name: buyer.name,
+      phone: buyer.phone ?? "",
+      email: buyer.email,
+    })
   );
 }
 

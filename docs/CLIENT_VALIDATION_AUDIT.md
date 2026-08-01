@@ -20,6 +20,23 @@ the record of what was wrong and why. What landed:
 `npx tsc --noEmit` is clean; `npx eslint lib app components` holds at the
 documented 8-error baseline (no new errors).
 
+### Notes for reviewers
+
+- **`maxLength` was deliberately not used** on name / phone / city / promo
+  code. It truncates paste silently, which on a name means issuing a ticket
+  under something the buyer never typed — and it makes the "must be N
+  characters or fewer" messages unreachable. The validators carry the rule.
+- **`validateBuyer` and `buyerIsComplete` must stay in sync.** The details step
+  gates on the first and the payment step on the second; a rule in one and not
+  the other is a redirect loop. `buyerIsComplete` is now defined in terms of
+  `validateBuyer` so they cannot drift.
+- **The payment-step guard checks `hydrated`.** The checkout store restores
+  from `sessionStorage` in a mount effect, and passive effects run child-first,
+  so without it the guard sees an empty buyer on every hard load and bounces a
+  valid session back to the details step.
+- The email regex previously duplicated in both sign-in pages now comes from
+  `lib/validation.ts`.
+
 Authoritative rules come from the BE zod schemas
 (`empireJP-BE/src/modules/*/**.schemas.ts`) — appendix at the bottom.
 

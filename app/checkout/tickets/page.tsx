@@ -8,7 +8,11 @@ import { CheckoutShell } from "@/components/CheckoutShell";
 import { QtyStepper } from "@/components/QtyStepper";
 import { ArrowRightIcon } from "@/components/Icons";
 import { money } from "@/lib/format";
-import { cartLinesError } from "@/lib/validation";
+import { LIMITS, cartLinesError } from "@/lib/validation";
+
+/** How many of one tier a single order may hold. A merchandising choice, well
+ *  inside the API's per-line maximum. */
+const PER_ORDER_TIER_LIMIT = 8;
 
 export default function TicketsStep() {
   const router = useRouter();
@@ -25,7 +29,11 @@ export default function TicketsStep() {
   // cartLinesSchema caps an order at 10 distinct tiers. Only reachable on an
   // event with 11+ types, but the failure would otherwise land at order
   // creation rather than here where the selection can be changed.
-  const distinctTiers = Object.values(lines).filter((q) => q > 0).length;
+  // Counted the same way lib/checkout.tsx derives totals — off the event's own
+  // tiers, not raw `lines` keys. Counting stale keys could block Continue over
+  // ticket types the stepper doesn't even render.
+  const distinctTiers =
+    event?.tiers.filter((t) => (lines[t.id] ?? 0) > 0).length ?? 0;
   const linesProblem = cartLinesError(distinctTiers);
 
   return (
@@ -57,7 +65,9 @@ export default function TicketsStep() {
         <div className="divide-y divide-line">
           {event?.tiers.map((t) => {
             const qty = lines[t.id] ?? 0;
-            const max = Math.min(t.available, 8);
+            // 8 is the product rule and is stricter than the API's per-line
+            // cap; take whichever binds first so the two can't drift apart.
+            const max = Math.min(t.available, PER_ORDER_TIER_LIMIT, LIMITS.cart.maxQtyPerLine);
             return (
               <div
                 key={t.id}

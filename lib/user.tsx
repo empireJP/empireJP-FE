@@ -159,13 +159,28 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       // from the rendered value rather than inside the updater, which must
       // stay pure.
       const previous = remote?.profile ?? null;
+      // Whose profile this snapshot belongs to. A slow PATCH can land after a
+      // sign-out/sign-in, and reverting then would paint the previous user's
+      // name, city and phone onto the new session — same guard toggleSaved
+      // already applies to its own revert.
+      const userId = remote?.userId ?? null;
       setRemote((r) => (r ? { ...r, profile: { ...r.profile, ...patch } } : r));
 
-      const fail = (message: string, fields: string[]) => {
+      const fail = (
+        message: string,
+        detail: Record<string, unknown>
+      ): string => {
         if (previous) {
-          setRemote((r) => (r ? { ...r, profile: previous } : r));
+          setRemote((r) =>
+            r && r.userId === userId ? { ...r, profile: previous } : r
+          );
         }
-        log.error("profile update was not persisted", { fields });
+        // Keep the cause: a 422, a 401 and a CORS rejection are different
+        // problems and must not read identically in the console.
+        log.error("profile update was not persisted", {
+          fields: Object.keys(patch),
+          ...detail,
+        });
         return message;
       };
 
@@ -183,14 +198,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             res.status === 401
               ? "Your session expired. Sign in again to save changes."
               : "We couldn't save those changes. Please check the fields and try again.",
-            Object.keys(patch)
+            { status: res.status }
           );
         }
         return null;
-      } catch {
+      } catch (err) {
         return fail(
           "We couldn't reach the server. Check your connection and try again.",
-          Object.keys(patch)
+          { cause: err instanceof Error ? err.message : String(err) }
         );
       }
     },
