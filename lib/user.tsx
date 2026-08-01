@@ -40,7 +40,10 @@ interface UserValue extends Persisted {
   profile: Profile;
   savedSlugs: string[];
   signOut: () => void;
-  updateProfile: (patch: Partial<Profile>) => void;
+  /** Resolves to null on success, or a message to show the user. The caller
+   *  decides how to surface it — the optimistic update is rolled back here
+   *  either way, so the UI never keeps a value the server rejected. */
+  updateProfile: (patch: Partial<Profile>) => Promise<string | null>;
   toggleSaved: (ev: { id: string; slug: string }) => void;
   isSaved: (slug: string) => boolean;
   toggleSubscribe: (slug: string) => void;
@@ -149,23 +152,51 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     void authClient.signOut();
   }, []);
 
-  const updateProfile = useCallback((patch: Partial<Profile>) => {
-    // Optimistic local update; persist to the BE in the background.
-    setRemote((r) => (r ? { ...r, profile: { ...r.profile, ...patch } } : r));
-    void fetch(`${API_URL}/api/v1/me`, {
-      method: "PATCH",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    }).catch((err) => {
-      // The optimistic update stays on screen, so a failure here looks like a
-      // save that worked and silently didn't survive the next reload.
-      log.error("profile update was not persisted", {
-        fields: Object.keys(patch),
-        cause: err instanceof Error ? err.message : String(err),
-      });
-    });
-  }, []);
+  const updateProfile = useCallback(
+    async (patch: Partial<Profile>): Promise<string | null> => {
+      // Snapshot for rollback: without it a rejected patch stays on screen and
+      // reads as a save that worked, right up until the next reload. Taken
+      // from the rendered value rather than inside the updater, which must
+      // stay pure.
+      const previous = remote?.profile ?? null;
+      setRemote((r) => (r ? { ...r, profile: { ...r.profile, ...patch } } : r));
+
+      const fail = (message: string, fields: string[]) => {
+        if (previous) {
+          setRemote((r) => (r ? { ...r, profile: previous } : r));
+        }
+        log.error("profile update was not persisted", { fields });
+        return message;
+      };
+
+      try {
+        const res = await fetch(`${API_URL}/api/v1/me`, {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        // fetch only rejects on a network fault — a 422 resolves, so without
+        // this check every rejected patch was silently discarded.
+        if (!res.ok) {
+          return fail(
+            res.status === 401
+              ? "Your session expired. Sign in again to save changes."
+              : "We couldn't save those changes. Please check the fields and try again.",
+            Object.keys(patch)
+          );
+        }
+        return null;
+      } catch {
+        return fail(
+          "We couldn't reach the server. Check your connection and try again.",
+          Object.keys(patch)
+        );
+      }
+    },
+    // `remote` is read for the rollback snapshot.
+    [remote]
+  );
 
   const toggleSaved = useCallback(
     (ev: { id: string; slug: string }) => {

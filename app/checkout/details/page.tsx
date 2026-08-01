@@ -6,6 +6,7 @@ import { useCheckout } from "@/lib/checkout";
 import { useUser } from "@/lib/user";
 import { CheckoutShell } from "@/components/CheckoutShell";
 import { ArrowRightIcon, CheckCircleIcon } from "@/components/Icons";
+import { LIMITS, hasErrors, validateBuyer } from "@/lib/validation";
 
 export default function DetailsStep() {
   const router = useRouter();
@@ -20,13 +21,17 @@ export default function DetailsStep() {
   }, [hydrated, signedIn, profile.email, buyer.email, setBuyer]);
   const [name, setName] = useState(buyer.name);
   const [phone, setPhone] = useState(buyer.phone);
-  const [error, setError] = useState("");
+  const [validated, setValidated] = useState(false);
+
+  // Mirrors createOrderSchema's `buyer` block, so an over-long name or phone
+  // fails here rather than at order creation on the payment step — where the
+  // same 422 reads as a payment problem.
+  const errors = validateBuyer({ name, phone });
+  const shown = validated ? errors : {};
 
   function proceed() {
-    if (name.trim().length < 2) {
-      setError("Please enter the name on the ticket.");
-      return;
-    }
+    setValidated(true);
+    if (hasErrors(errors)) return;
     setBuyer({ name: name.trim(), phone: phone.trim() });
     router.push("/checkout/payment");
   }
@@ -52,13 +57,18 @@ export default function DetailsStep() {
             <span className="text-sm font-medium text-fg">Full name</span>
             <input
               value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                setError("");
-              }}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => setValidated(true)}
               placeholder="Alex Morgan"
-              className="rounded-xl border border-line bg-surface px-3.5 py-3 text-sm text-fg placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent"
+              maxLength={LIMITS.buyer.name}
+              aria-invalid={!!shown.name}
+              className="rounded-xl border border-line bg-surface px-3.5 py-3 text-sm text-fg placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent aria-[invalid=true]:border-danger"
             />
+            {shown.name && (
+              <span role="alert" className="text-xs font-medium text-danger">
+                {shown.name}
+              </span>
+            )}
           </label>
 
           <label className="flex flex-col gap-1.5">
@@ -68,17 +78,24 @@ export default function DetailsStep() {
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+              onBlur={() => setValidated(true)}
               placeholder="(555) 123-4567"
               inputMode="tel"
-              className="rounded-xl border border-line bg-surface px-3.5 py-3 text-sm text-fg placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent"
+              maxLength={LIMITS.buyer.phone}
+              aria-invalid={!!shown.phone}
+              className="rounded-xl border border-line bg-surface px-3.5 py-3 text-sm text-fg placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent aria-[invalid=true]:border-danger"
             />
-            <span className="text-xs text-faint">
-              For door updates if the event time changes.
-            </span>
+            {shown.phone ? (
+              <span role="alert" className="text-xs font-medium text-danger">
+                {shown.phone}
+              </span>
+            ) : (
+              <span className="text-xs text-faint">
+                For door updates if the event time changes.
+              </span>
+            )}
           </label>
         </div>
-
-        {error && <p className="mt-3 text-sm text-accent">{error}</p>}
 
         <div className="mt-6 flex items-center gap-3">
           <button

@@ -8,6 +8,7 @@ import { CheckoutShell } from "@/components/CheckoutShell";
 import { QtyStepper } from "@/components/QtyStepper";
 import { ArrowRightIcon } from "@/components/Icons";
 import { money } from "@/lib/format";
+import { cartLinesError } from "@/lib/validation";
 
 export default function TicketsStep() {
   const router = useRouter();
@@ -21,6 +22,12 @@ export default function TicketsStep() {
     }
   }, [hydrated, signedIn, router]);
 
+  // cartLinesSchema caps an order at 10 distinct tiers. Only reachable on an
+  // event with 11+ types, but the failure would otherwise land at order
+  // creation rather than here where the selection can be changed.
+  const distinctTiers = Object.values(lines).filter((q) => q > 0).length;
+  const linesProblem = cartLinesError(distinctTiers);
+
   return (
     <CheckoutShell
       step="tickets"
@@ -28,14 +35,16 @@ export default function TicketsStep() {
       subtitle={event ? `${event.title} · ${event.venue}` : undefined}
       action={
         <div className="flex items-center justify-between gap-4">
-          <p className="text-sm text-muted">
-            {totals.count === 0
-              ? "Add at least one ticket to continue."
-              : `${totals.count} ticket${totals.count > 1 ? "s" : ""} · ${money(totals.total)} total`}
+          <p className={`text-sm ${linesProblem ? "text-danger" : "text-muted"}`}>
+            {linesProblem
+              ? linesProblem
+              : totals.count === 0
+                ? "Add at least one ticket to continue."
+                : `${totals.count} ticket${totals.count > 1 ? "s" : ""} · ${money(totals.total)} total`}
           </p>
           <button
             onClick={() => router.push("/checkout/details")}
-            disabled={totals.count === 0}
+            disabled={totals.count === 0 || !!linesProblem}
             className="flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-fg transition-all hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Continue

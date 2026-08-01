@@ -5,6 +5,7 @@ import { useCheckout } from "@/lib/checkout";
 import { EventCover } from "./EventCover";
 import { CalendarIcon, CheckIcon, LockIcon, PinIcon, XIcon } from "./Icons";
 import { amount, dateShort, money, to12h } from "@/lib/format";
+import { LIMITS, validateCouponCode } from "@/lib/validation";
 
 export function OrderSummary() {
   const { event, lines, totals, coupon, applyCoupon, removeCoupon } = useCheckout();
@@ -16,7 +17,14 @@ export function OrderSummary() {
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const res = applyCoupon(code);
+    // validateCouponSchema is `trim().min(1).max(64)` — an untouched field
+    // used to submit an empty string and come back as a generic failure.
+    const shapeError = validateCouponCode(code);
+    if (shapeError) {
+      setError(shapeError);
+      return;
+    }
+    const res = applyCoupon(code.trim());
     if (res.ok) {
       setError("");
       setCode("");
@@ -97,11 +105,14 @@ export function OrderSummary() {
                   setError("");
                 }}
                 placeholder="Promo code"
-                className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm uppercase text-fg placeholder:normal-case placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent"
+                maxLength={LIMITS.coupon.code}
+                aria-invalid={!!error}
+                className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm uppercase text-fg placeholder:normal-case placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent aria-[invalid=true]:border-danger"
               />
               <button
                 type="submit"
-                className="shrink-0 rounded-lg border border-line px-3.5 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover"
+                disabled={!code.trim()}
+                className="shrink-0 rounded-lg border border-line px-3.5 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Apply
               </button>

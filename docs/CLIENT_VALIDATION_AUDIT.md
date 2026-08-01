@@ -2,6 +2,24 @@
 
 Branch: `feat/client-side-validation` (off `dev`)
 
+**Status: all findings below are fixed on this branch.** The audit is kept as
+the record of what was wrong and why. What landed:
+
+- `lib/validation.ts` — pure validators mirroring the BE schemas, no new
+  dependency. `LIMITS` is the one place to change when a BE rule moves.
+- `lib/user.tsx` — `updateProfile` now checks `res.ok`, rolls the optimistic
+  update back on failure, and returns a message instead of resolving silently.
+- `app/account/page.tsx` — validates before saving, reports real failures, and
+  the email field is read-only.
+- `app/checkout/details/page.tsx` — name and phone bounded, per-field messages.
+- `app/checkout/payment/page.tsx` — redirects to the details step when the
+  buyer is incomplete.
+- `components/OrderSummary.tsx` — coupon trimmed, bounded, Apply disabled empty.
+- `app/checkout/tickets/page.tsx` — distinct-tier cap enforced.
+
+`npx tsc --noEmit` is clean; `npx eslint lib app components` holds at the
+documented 8-error baseline (no new errors).
+
 Authoritative rules come from the BE zod schemas
 (`empireJP-BE/src/modules/*/**.schemas.ts`) — appendix at the bottom.
 

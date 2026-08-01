@@ -25,6 +25,7 @@ import { money } from "@/lib/format";
 import { confirmMockOrder, getPaymentMethods } from "@/lib/api";
 import { startPayHerePayment } from "@/lib/payhere";
 import { createLogger } from "@/lib/logger";
+import { buyerIsComplete } from "@/lib/validation";
 import type { PaymentMethod, PaymentProviderId } from "@/lib/types";
 
 const log = createLogger("checkout.payment");
@@ -45,6 +46,19 @@ export default function PaymentStep() {
 
   const isFree = totals.total === 0;
   const busy = status !== "idle";
+
+  // The details step is the only thing that populates `buyer`, and reaching
+  // this page is otherwise pure forward navigation — back/forward, a restored
+  // tab or a bookmark lands here with an empty name and a live Pay button.
+  // createOrderSchema requires `buyer.name`, so that 422 would surface at the
+  // worst possible moment. Send them back to fill it in instead.
+  const incompleteBuyer = !buyerIsComplete(buyer);
+  useEffect(() => {
+    if (incompleteBuyer && !busy) {
+      log.warn("payment step reached without buyer details — redirecting");
+      router.replace("/checkout/details");
+    }
+  }, [incompleteBuyer, busy, router]);
 
   // Which gateways this server can run. An empty list is a legitimate answer
   // (nothing configured) and renders as an explanation, not a crash.
