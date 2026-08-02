@@ -21,8 +21,8 @@ export default function TermsPage() {
       </Section>
       <Section heading="Payments">
         <p>
-          Prices are shown in the currency at checkout and include any service fee before you pay.
-          Orders are confirmed only once payment succeeds.
+          Prices are shown in the currency at checkout, and the price you see is the price you pay
+          — no booking or service fees are added. Orders are confirmed only once payment succeeds.
         </p>
       </Section>
       <Section heading="Entry">

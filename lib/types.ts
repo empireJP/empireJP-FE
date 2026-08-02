@@ -16,8 +16,9 @@ export interface Performer {
 export interface TicketTier {
   id: string;
   name: string;
-  price: number; // USD, excl. fee
-  fee: number; // per-ticket service fee
+  /** What the buyer pays per ticket. Nothing is added on top at checkout —
+   *  the platform's commission is charged to the organizer at settlement. */
+  price: number;
   blurb: string;
   perks?: string[];
   available: number;
@@ -42,7 +43,7 @@ export interface EventItem {
   lineupLabel: string; // "Lineup" | "Speakers" | "Performers"
   lineup: Performer[];
   description: string[];
-  /** ISO code every tier price/fee is denominated in ("USD", "JPY", …).
+  /** ISO code every tier price is denominated in ("USD", "JPY", …).
    *  Format money with it (lib/format money/amount) — never a hardcoded "$".
    *  Optional only because the legacy mock data in lib/data.ts predates it;
    *  the API always sends it, and formatting falls back to USD. */
@@ -86,9 +87,10 @@ export interface Order {
   eventTitle: string;
   lines: { tierName: string; qty: number; price: number }[];
   subtotal: number;
-  fees: number;
   discount: number;
   couponCode?: string;
+  /** `subtotal - discount`. No service fee is added to the buyer's total —
+   *  the platform commission is deducted from the organizer at settlement. */
   total: number;
   buyerName: string;
   buyerEmail: string;
