@@ -97,6 +97,10 @@ export interface EventsQuery {
   city?: City;
   q?: string;
   featured?: boolean;
+  /** `true` = still to come, `false` = already over, omitted = both. The
+   *  landing page's rails ask for `true`; Explore and search leave it off so
+   *  past events stay findable, labelled as ended. */
+  upcoming?: boolean;
   sort?: "date" | "trending";
   page?: number;
   limit?: number;

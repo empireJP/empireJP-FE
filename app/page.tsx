@@ -42,9 +42,15 @@ const SOCIALS = [
 ];
 
 export default async function Home() {
+  // `upcoming` everywhere on this page. The hero, the trending rail and the
+  // category tiles all answer "what's on", and a show that already happened is
+  // not an answer to that — it was leading the slider, counting toward the
+  // per-category totals, and offering a buy button that the API now refuses.
+  // Past events stay reachable and labelled elsewhere (Explore, search, saved,
+  // and their own page); they just don't get the front door.
   const [{ events }, { events: trending }] = await Promise.all([
-    getEvents({ sort: "date", limit: 50 }),
-    getEvents({ sort: "trending", limit: 6 }),
+    getEvents({ sort: "date", limit: 50, upcoming: true }),
+    getEvents({ sort: "trending", limit: 6, upcoming: true }),
   ]);
   const slides = events.slice(0, 7);
   const tiles = CATEGORIES.map((c) => {

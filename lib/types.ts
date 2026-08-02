@@ -53,6 +53,18 @@ export interface EventItem {
   accent: string; // dominant color for small solid accents
   attending: number;
   capacity: number;
+  /** The show is over. Server-computed and absent (not `false`) while it is
+   *  still to come.
+   *
+   *  Don't re-derive this from `date`/`startTime`/`endTime`: those are Colombo
+   *  wall-clock strings, and `endTime <= startTime` means the night runs past
+   *  midnight — two ways to get "is it over" wrong in a browser, on the
+   *  question that gates the buy button. */
+  ended?: true;
+  /** Tickets can no longer be bought. Usually arrives with `ended`, but a
+   *  business can close sales early (advance-only) or late (a grace window),
+   *  so an event can be sales-closed while still running. */
+  salesClosed?: true;
   featured?: boolean;
 }
 
