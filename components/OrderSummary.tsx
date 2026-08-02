@@ -13,6 +13,8 @@ export function OrderSummary() {
 
   if (!event) return null;
   const active = event.tiers.filter((t) => (lines[t.id] ?? 0) > 0);
+  // Every amount in this panel is denominated in the event's currency.
+  const ccy = event.currency;
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -63,7 +65,7 @@ export function OrderSummary() {
                   <span className="text-muted">
                     {t.name} <span className="text-faint">× {qty}</span>
                   </span>
-                  <span className="tnum font-medium text-fg">{money(t.price * qty)}</span>
+                  <span className="tnum font-medium text-fg">{money(t.price * qty, ccy)}</span>
                 </div>
               );
             })}
@@ -116,21 +118,21 @@ export function OrderSummary() {
         <div className="border-t border-line px-4 py-3 text-sm">
           <div className="flex justify-between text-muted">
             <span>Subtotal</span>
-            <span className="tnum">{amount(totals.subtotal)}</span>
+            <span className="tnum">{amount(totals.subtotal, ccy)}</span>
           </div>
           <div className="mt-1 flex justify-between text-muted">
             <span>Service fee</span>
-            <span className="tnum">{amount(totals.fees)}</span>
+            <span className="tnum">{amount(totals.fees, ccy)}</span>
           </div>
           {totals.discount > 0 && (
             <div className="mt-1 flex justify-between font-medium text-success">
               <span>Discount</span>
-              <span className="tnum">−{amount(totals.discount)}</span>
+              <span className="tnum">−{amount(totals.discount, ccy)}</span>
             </div>
           )}
           <div className="mt-2 flex justify-between border-t border-line pt-2 text-base font-semibold text-fg">
             <span>Total</span>
-            <span className="tnum">{money(totals.total)}</span>
+            <span className="tnum">{money(totals.total, ccy)}</span>
           </div>
         </div>
       )}

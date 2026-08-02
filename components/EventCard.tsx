@@ -11,10 +11,10 @@ export function fromPrice(e: EventItem) {
   return Math.min(...live.map((t) => t.price));
 }
 
-function priceLabel(from: number | null) {
+function priceLabel(from: number | null, currency?: string) {
   if (from === null) return "Sold out";
   if (from === 0) return "Free";
-  return `from ${money(from)}`;
+  return `from ${money(from, currency)}`;
 }
 
 export function EventCard({ event }: { event: EventItem }) {
@@ -39,7 +39,7 @@ export function EventCard({ event }: { event: EventItem }) {
           {event.category}
         </span>
         <span className="absolute right-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-xs font-bold text-neutral-900 backdrop-blur-sm">
-          {priceLabel(from)}
+          {priceLabel(from, event.currency)}
         </span>
         <SaveButton id={event.id} slug={event.slug} className="absolute bottom-3 right-3" />
       </div>

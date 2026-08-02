@@ -145,7 +145,7 @@ export function HeroSlider({ events }: { events: EventItem[] }) {
           {from === 0
             ? "Free · Get tickets"
             : from !== null
-            ? `From ${money(from)} · Get tickets`
+            ? `From ${money(from, activeEvent.currency)} · Get tickets`
             : "View event"}
           <ArrowRightIcon width={16} height={16} />
         </Link>
