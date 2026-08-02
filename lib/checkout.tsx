@@ -34,7 +34,6 @@ interface Persisted {
 interface Totals {
   count: number;
   subtotal: number;
-  fees: number;
   discount: number;
   /** The applied code, normalized by the API. */
   couponLabel: string | null;
@@ -206,13 +205,13 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
   const totals = useMemo<Totals>(() => {
     let count = 0;
     let subtotal = 0;
-    let fees = 0;
+    // No fee line: the buyer pays the tier price, and the platform's
+    // commission is deducted from the organizer's payout at settlement.
     if (event) {
       for (const tier of event.tiers) {
         const qty = state.lines[tier.id] ?? 0;
         count += qty;
         subtotal += qty * tier.price;
-        fees += qty * tier.fee;
       }
     }
     // Clamped to the subtotal rather than trusted outright: the coupon state
@@ -223,12 +222,11 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     return {
       count,
       subtotal,
-      fees,
       discount,
       couponLabel: state.coupon,
       couponError: coupon.error,
       couponPending: coupon.pending,
-      total: Math.max(0, subtotal + fees - discount),
+      total: Math.max(0, subtotal - discount),
     };
   }, [event, state.lines, state.coupon, coupon]);
 
@@ -344,7 +342,7 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     async (paymentProvider: PaymentProviderId): Promise<CreatedOrder> => {
       if (!event) throw new Error("Your cart is no longer available.");
 
-      // Tier ids and quantities only. Prices, fees and the coupon discount are
+      // Tier ids and quantities only. Prices and the coupon discount are
       // all recomputed by the API from its own catalog — nothing the browser
       // says about money is trusted, which is also why the totals rendered in
       // the summary are a preview rather than an input.

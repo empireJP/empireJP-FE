@@ -208,7 +208,7 @@ export interface CreateOrderInput {
 /**
  * Creates the order and gets back what the browser must do to pay for it.
  *
- * Only tier ids and quantities are sent — every price, fee and discount is
+ * Only tier ids and quantities are sent — every price and discount is
  * computed server-side, so the totals shown alongside are a display of the
  * cart, never an input to the charge. The order comes back PENDING and holds
  * its inventory for a fixed window; it becomes PAID only when the gateway's

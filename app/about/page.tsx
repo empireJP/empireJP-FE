@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 const VALUES = [
   ["Curated nights", "Every event is a show we'd actually go to — no filler."],
-  ["Fair, upfront pricing", "The price you see is the price you pay. Fees shown before checkout."],
+  ["Fair, upfront pricing", "The price you see is the price you pay. No fees added at checkout."],
   ["Instant tickets", "Buy in seconds, get a QR code you scan at the door."],
 ];
 

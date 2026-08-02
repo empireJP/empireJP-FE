@@ -150,10 +150,9 @@ export function OrderSummary() {
             <span>Subtotal</span>
             <span className="tnum">{amount(totals.subtotal, ccy)}</span>
           </div>
-          <div className="mt-1 flex justify-between text-muted">
-            <span>Service fee</span>
-            <span className="tnum">{amount(totals.fees, ccy)}</span>
-          </div>
+          {/* No service-fee row: the buyer pays the ticket price as shown. The
+              platform commission is deducted from the organizer's payout at
+              settlement, so it never reaches the buyer's totals. */}
           {totals.discount > 0 && (
             <div className="mt-1 flex justify-between font-medium text-success">
               <span>Discount</span>
