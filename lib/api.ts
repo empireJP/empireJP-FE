@@ -153,6 +153,43 @@ export async function getPaymentMethods(): Promise<PaymentMethod[]> {
   return data;
 }
 
+export interface ValidateCouponInput {
+  code: string;
+  eventSlug: string;
+  lines: CartLine[];
+  /** Only used for the API's per-buyer redemption cap, and only once the
+   *  buyer has actually typed an address — omitting it defers that one check
+   *  to order creation. */
+  email?: string;
+}
+
+export interface ValidatedCoupon {
+  /** Normalized (uppercased) by the API — display this, not what was typed. */
+  code: string;
+  discount: number;
+}
+
+/**
+ * Asks the API what a promo code is worth on this exact cart.
+ *
+ * The answer is a *preview*. Order creation recomputes the discount from the
+ * code, so nothing here can change what the buyer is charged — which is also
+ * why it is safe to call on every cart change. Throws ApiError with a
+ * buyer-readable message (expired, wrong event, fully redeemed) on 422; the
+ * caller shows it verbatim.
+ */
+export async function validateCoupon(input: ValidateCouponInput): Promise<ValidatedCoupon> {
+  const { data } = await apiFetch<ValidatedCoupon>("/coupons/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // Attaches the session when there is one, so a signed-in buyer's per-user
+    // cap is checked here rather than surfacing at checkout.
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  return data;
+}
+
 export interface CreateOrderInput {
   eventSlug: string;
   lines: CartLine[];
