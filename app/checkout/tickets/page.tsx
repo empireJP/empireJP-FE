@@ -21,6 +21,14 @@ export default function TicketsStep() {
     }
   }, [hydrated, signedIn, router]);
 
+  // A cart survives in sessionStorage, so it can outlive the sale it was
+  // started from. Without this the buyer walks three more steps and is
+  // refused at payment, which is where the API stops them regardless.
+  const closed = Boolean(event?.ended || event?.salesClosed);
+  const closedReason = event?.ended
+    ? "This event has already taken place."
+    : "Ticket sales for this event have closed.";
+
   return (
     <CheckoutShell
       step="tickets"
@@ -28,14 +36,16 @@ export default function TicketsStep() {
       subtitle={event ? `${event.title} · ${event.venue}` : undefined}
       action={
         <div className="flex items-center justify-between gap-4">
-          <p className="text-sm text-muted">
-            {totals.count === 0
-              ? "Add at least one ticket to continue."
-              : `${totals.count} ticket${totals.count > 1 ? "s" : ""} · ${money(totals.total, event?.currency)} total`}
+          <p className={`text-sm ${closed ? "text-warning" : "text-muted"}`}>
+            {closed
+              ? closedReason
+              : totals.count === 0
+                ? "Add at least one ticket to continue."
+                : `${totals.count} ticket${totals.count > 1 ? "s" : ""} · ${money(totals.total, event?.currency)} total`}
           </p>
           <button
             onClick={() => router.push("/checkout/details")}
-            disabled={totals.count === 0}
+            disabled={totals.count === 0 || closed}
             className="flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-fg transition-all hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Continue

@@ -119,6 +119,18 @@ export default async function EventPage({
             <span className="inline-flex items-center rounded-full bg-accent-soft px-3 py-1 text-xs font-semibold text-accent">
               {event.category}
             </span>
+            {/* Sits first among the meta chips rather than beside the button:
+                someone arriving from an old link should learn the night is
+                over before they read the lineup, not after. */}
+            {event.ended ? (
+              <span className="inline-flex items-center rounded-full bg-surface-3 px-3 py-1 text-xs font-semibold text-muted">
+                Ended
+              </span>
+            ) : event.salesClosed ? (
+              <span className="inline-flex items-center rounded-full bg-warning-soft px-3 py-1 text-xs font-semibold text-warning">
+                Sales closed
+              </span>
+            ) : null}
             <span className="text-xs text-faint">
               {event.ageLimit === 0 ? "All ages" : `${event.ageLimit}+`}
             </span>
@@ -208,7 +220,12 @@ export default async function EventPage({
             </div>
 
             <div className="border-t border-line p-4">
-              <GetTicketsButton slug={event.slug} soldOut={soldOut} />
+              <GetTicketsButton
+                slug={event.slug}
+                soldOut={soldOut}
+                ended={event.ended}
+                salesClosed={event.salesClosed}
+              />
               <p className="mt-2 text-center text-xs text-faint">
                 Secure checkout · Mobile QR ticket · Instant confirmation
               </p>
