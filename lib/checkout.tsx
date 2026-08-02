@@ -9,8 +9,8 @@ import {
   useRef,
   useState,
 } from "react";
-import type { CreatedOrder, EventItem, Order, PaymentProviderId } from "./types";
-import { createOrder, getEvent, getOrder } from "./api";
+import type { CartLine, CreatedOrder, EventItem, Order, PaymentProviderId } from "./types";
+import { ApiError, createOrder, getEvent, getOrder, validateCoupon } from "./api";
 import { createLogger } from "./logger";
 
 const log = createLogger("checkout");
@@ -36,7 +36,13 @@ interface Totals {
   subtotal: number;
   fees: number;
   discount: number;
+  /** The applied code, normalized by the API. */
   couponLabel: string | null;
+  /** Set when a code that was accepted has since stopped applying to this
+   *  cart — the buyer removed the tier it targeted, dropped below its minimum
+   *  spend, or it was disabled while they shopped. */
+  couponError: string | null;
+  couponPending: boolean;
   total: number;
 }
 
@@ -48,7 +54,9 @@ interface CheckoutValue extends Persisted {
   startCheckout: (slug: string, initial?: Record<string, number>) => void;
   setQty: (tierId: string, qty: number) => void;
   setBuyer: (patch: Partial<Buyer>) => void;
-  applyCoupon: (code: string) => { ok: boolean; error?: string };
+  /** Validates against the API and applies on success. The error is the API's
+   *  own reason, which is far more useful than "invalid". */
+  applyCoupon: (code: string) => Promise<{ ok: boolean; error?: string }>;
   removeCoupon: () => void;
   /**
    * Creates the order on the API and stores it. Resolves with the created
@@ -79,24 +87,31 @@ export interface OrderRef {
   buyerEmail: string;
 }
 
-/** Promo codes (case-insensitive).
+/**
+ * What the API last said this cart's promo code is worth.
  *
- *  These mirror the codes the API seeds, and drive the cart preview only. The
- *  discount that is actually applied is recomputed server-side from the code
- *  we send, so a locally-edited value here changes what the buyer is *shown*,
- *  never what they are charged. */
-const COUPONS: Record<string, { type: "percent" | "fixed"; value: number; label: string }> = {
-  RAVE10: { type: "percent", value: 10, label: "RAVE10 · 10% off" },
-  EMPIRE20: { type: "percent", value: 20, label: "EMPIRE20 · 20% off" },
-  FIRST5: { type: "fixed", value: 5, label: "FIRST5 · $5 off" },
-};
+ * Deliberately not persisted and never computed here. Coupons used to be a
+ * hardcoded table in this file, which meant a code a business actually created
+ * was rejected in the browser before the API ever saw it — and the rules that
+ * decide a discount (tier targeting, caps, minimum spend, per-buyer limits)
+ * have no client-side answer anyway. The `discount` below is a preview of the
+ * API's number; order creation recomputes it from the code regardless.
+ */
+interface CouponState {
+  discount: number;
+  /** Buyer-readable reason the code stopped applying, straight from the API. */
+  error: string | null;
+  pending: boolean;
+}
 
-function couponDiscount(code: string | null, subtotal: number) {
-  const c = code ? COUPONS[code] : null;
-  if (!c) return 0;
-  return c.type === "percent"
-    ? Math.round((subtotal * c.value) / 100)
-    : Math.min(c.value, subtotal);
+const noCoupon: CouponState = { discount: 0, error: null, pending: false };
+
+/** Tier ids + quantities, which is all the API wants — prices stay server-side. */
+function cartLines(event: EventItem | null, lines: Record<string, number>): CartLine[] {
+  if (!event) return [];
+  return event.tiers
+    .filter((t) => (lines[t.id] ?? 0) > 0)
+    .map((t) => ({ tierId: t.id, qty: lines[t.id]! }));
 }
 
 const empty: Persisted = {
@@ -120,6 +135,9 @@ const ORDER_POLL_TIMEOUT_MS = 90_000;
 
 export function CheckoutProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<Persisted>(empty);
+  // Only the code is persisted; what it's worth is the API's answer about the
+  // current cart, so it's re-fetched rather than restored.
+  const [coupon, setCoupon] = useState<CouponState>(noCoupon);
   const [hydrated, setHydrated] = useState(false);
   const first = useRef(true);
 
@@ -197,17 +215,22 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
         fees += qty * tier.fee;
       }
     }
-    const discount = couponDiscount(state.coupon, subtotal);
-    const couponLabel = state.coupon ? COUPONS[state.coupon]?.label ?? null : null;
+    // Clamped to the subtotal rather than trusted outright: the coupon state
+    // can be one render behind the cart (the buyer drops a ticket, the
+    // revalidation hasn't landed), and showing a total lower than the API will
+    // charge is the one direction that must never happen.
+    const discount = state.coupon ? Math.min(coupon.discount, subtotal) : 0;
     return {
       count,
       subtotal,
       fees,
       discount,
-      couponLabel,
+      couponLabel: state.coupon,
+      couponError: coupon.error,
+      couponPending: coupon.pending,
       total: Math.max(0, subtotal + fees - discount),
     };
-  }, [event, state.lines, state.coupon]);
+  }, [event, state.lines, state.coupon, coupon]);
 
   const startCheckout = useCallback(
     (slug: string, initial: Record<string, number> = {}) => {
@@ -229,17 +252,93 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     setState((s) => ({ ...s, buyer: { ...s.buyer, ...patch } }));
   }, []);
 
-  const applyCoupon = useCallback((code: string) => {
-    const key = code.trim().toUpperCase();
-    if (!key) return { ok: false, error: "Enter a code." };
-    if (!COUPONS[key]) return { ok: false, error: "That code isn't valid." };
-    setState((s) => ({ ...s, coupon: key }));
-    return { ok: true };
-  }, []);
+  /**
+   * Applies a code by asking the API what it's worth, and only stores it if
+   * the API accepts. The rejection message is the API's own — it knows which
+   * of a dozen rules failed, and repeating a generic "that code isn't valid"
+   * here would throw that away.
+   */
+  const applyCoupon = useCallback(
+    async (code: string): Promise<{ ok: boolean; error?: string }> => {
+      const key = code.trim().toUpperCase();
+      if (!key) return { ok: false, error: "Enter a code." };
+      if (!event) return { ok: false, error: "Your cart is no longer available." };
+
+      const lines = cartLines(event, state.lines);
+      if (lines.length === 0) return { ok: false, error: "Add a ticket first." };
+
+      setCoupon({ discount: 0, error: null, pending: true });
+      try {
+        const applied = await validateCoupon({
+          code: key,
+          eventSlug: event.slug,
+          lines,
+          ...(state.buyer.email ? { email: state.buyer.email } : {}),
+        });
+        setCoupon({ discount: applied.discount, error: null, pending: false });
+        setState((s) => ({ ...s, coupon: applied.code }));
+        log.debug("coupon applied", { code: applied.code });
+        return { ok: true };
+      } catch (err) {
+        setCoupon(noCoupon);
+        // A rejected code is a routine outcome, not a fault — lib/api.ts has
+        // already logged anything that was actually broken.
+        const message =
+          err instanceof ApiError ? err.message : "We couldn't check that code. Try again.";
+        return { ok: false, error: message };
+      }
+    },
+    [event, state.lines, state.buyer.email],
+  );
 
   const removeCoupon = useCallback(() => {
+    setCoupon(noCoupon);
     setState((s) => ({ ...s, coupon: null }));
   }, []);
+
+  /**
+   * Re-prices an applied coupon whenever the cart changes.
+   *
+   * Necessary because the discount is a function of the cart, not of the code:
+   * a percentage moves with the subtotal, a tier-targeted code stops applying
+   * when that tier is removed, and a minimum-spend code falls away below its
+   * threshold. Without this the buyer would keep seeing the discount from the
+   * cart they *had*, and only find out at checkout.
+   *
+   * Every state write is inside a promise callback, never in the effect body —
+   * a synchronous setState here is the pattern the lint baseline is trying to
+   * stop spreading.
+   */
+  useEffect(() => {
+    const code = state.coupon;
+    if (!code || !event) return;
+    const lines = cartLines(event, state.lines);
+    if (lines.length === 0) return;
+
+    let stale = false;
+    validateCoupon({
+      code,
+      eventSlug: event.slug,
+      lines,
+      ...(state.buyer.email ? { email: state.buyer.email } : {}),
+    })
+      .then((applied) => {
+        if (!stale) setCoupon({ discount: applied.discount, error: null, pending: false });
+      })
+      .catch((err) => {
+        if (stale) return;
+        // The code was valid when applied and isn't now. The summary shows the
+        // message, but the drop is invisible in the totals otherwise.
+        const message =
+          err instanceof ApiError ? err.message : "We couldn't re-check that code.";
+        setCoupon({ discount: 0, error: message, pending: false });
+        log.warn("applied coupon no longer valid for this cart", { code, reason: message });
+      });
+
+    return () => {
+      stale = true;
+    };
+  }, [event, state.lines, state.coupon, state.buyer.email]);
 
   const placeOrder = useCallback(
     async (paymentProvider: PaymentProviderId): Promise<CreatedOrder> => {
@@ -249,10 +348,20 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
       // all recomputed by the API from its own catalog — nothing the browser
       // says about money is trusted, which is also why the totals rendered in
       // the summary are a preview rather than an input.
-      const lines = event.tiers
-        .filter((t) => (state.lines[t.id] ?? 0) > 0)
-        .map((t) => ({ tierId: t.id, qty: state.lines[t.id]! }));
+      const lines = cartLines(event, state.lines);
       if (lines.length === 0) throw new Error("Your cart is empty.");
+
+      // A code the API has already told us no longer applies is left off the
+      // order. Sending it would fail the whole checkout over a discount the
+      // buyer can see is worth nothing — the summary shows the code in its
+      // rejected state with the reason, and the total is already full price.
+      const sendCoupon = state.coupon !== null && coupon.error === null;
+      if (state.coupon !== null && !sendCoupon) {
+        log.warn("placing order without the applied coupon", {
+          code: state.coupon,
+          reason: coupon.error,
+        });
+      }
 
       const created = await createOrder({
         eventSlug: event.slug,
@@ -262,7 +371,7 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
           email: state.buyer.email,
           ...(state.buyer.phone ? { phone: state.buyer.phone } : {}),
         },
-        ...(state.coupon ? { couponCode: state.coupon } : {}),
+        ...(sendCoupon ? { couponCode: state.coupon! } : {}),
         paymentProvider,
       });
 
@@ -294,7 +403,10 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
       }
       return created;
     },
-    [event, state.eventSlug, state.lines, state.buyer, state.coupon],
+    // `state.eventSlug` for the pre-redirect persist above; `coupon.error` so
+    // a code that has stopped applying is dropped from the order rather than
+    // failing it.
+    [event, state.eventSlug, state.lines, state.buyer, state.coupon, coupon.error],
   );
 
   // Both take the order explicitly rather than reading it out of state. The
@@ -350,7 +462,10 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     [refreshOrder],
   );
 
-  const reset = useCallback(() => setState(empty), []);
+  const reset = useCallback(() => {
+    setState(empty);
+    setCoupon(noCoupon);
+  }, []);
 
   const value: CheckoutValue = {
     ...state,
