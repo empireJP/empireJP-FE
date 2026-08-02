@@ -72,7 +72,7 @@ app/
   dashboard/(layout,page)    overview + audience CRM
   signin/page.tsx            standalone account sign-in
 components/                  TopNav, EventCard, CheckoutShell, OrderSummary,
-                             QtyStepper, CheckoutStepper, QRTicket, DashboardTabs, …
+                             QtyStepper, CheckoutStepper, QRTicket, DashboardTabs, 
 lib/
   data.ts                    9 electronic-music events, each with a poster cover
   dashboard.ts               organizer KPIs + audience records

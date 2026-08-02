@@ -119,6 +119,18 @@ export default async function EventPage({
             <span className="inline-flex items-center rounded-full bg-accent-soft px-3 py-1 text-xs font-semibold text-accent">
               {event.category}
             </span>
+            {/* Sits first among the meta chips rather than beside the button:
+                someone arriving from an old link should learn the night is
+                over before they read the lineup, not after. */}
+            {event.ended ? (
+              <span className="inline-flex items-center rounded-full bg-surface-3 px-3 py-1 text-xs font-semibold text-muted">
+                Ended
+              </span>
+            ) : event.salesClosed ? (
+              <span className="inline-flex items-center rounded-full bg-warning-soft px-3 py-1 text-xs font-semibold text-warning">
+                Sales closed
+              </span>
+            ) : null}
             <span className="text-xs text-faint">
               {event.ageLimit === 0 ? "All ages" : `${event.ageLimit}+`}
             </span>
@@ -168,7 +180,7 @@ export default async function EventPage({
                 <TicketIcon width={16} height={16} className="text-muted" /> Tickets
               </span>
               <span className="text-sm text-muted">
-                {soldOut ? "Sold out" : from === 0 ? "Free" : `from ${money(from!)}`}
+                {soldOut ? "Sold out" : from === 0 ? "Free" : `from ${money(from!, event.currency)}`}
               </span>
             </div>
 
@@ -196,7 +208,9 @@ export default async function EventPage({
                     )}
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className="font-semibold text-fg">{t.soldOut ? "—" : money(t.price)}</p>
+                    <p className="font-semibold text-fg">
+                      {t.soldOut ? "—" : money(t.price, event.currency)}
+                    </p>
                     <p className={`text-xs ${!t.soldOut && t.available <= 24 ? "text-warning" : "text-faint"}`}>
                       {t.soldOut ? "Sold out" : t.available <= 24 ? `${t.available} left` : "Available"}
                     </p>
@@ -206,7 +220,12 @@ export default async function EventPage({
             </div>
 
             <div className="border-t border-line p-4">
-              <GetTicketsButton slug={event.slug} soldOut={soldOut} />
+              <GetTicketsButton
+                slug={event.slug}
+                soldOut={soldOut}
+                ended={event.ended}
+                salesClosed={event.salesClosed}
+              />
               <p className="mt-2 text-center text-xs text-faint">
                 Secure checkout · Mobile QR ticket · Instant confirmation
               </p>

@@ -13,9 +13,15 @@
 //      only a hint that it's worth looking — see lib/payhere.ts.
 //
 // Apple Pay stays where it was, at the top: it is the fastest path for the
-// buyers who have it. It is not a PayHere method, so until a real Apple Pay
-// merchant flow exists it runs through the test provider and is labelled as a
-// demo — visible and honest beats removed or silently fake.
+// buyers who have it, and its slot is worth holding. There is no Apple Pay
+// merchant flow yet, so the button is inert and says "Coming soon" — it used
+// to quietly settle through the test provider, which is a thing no storefront
+// button should do once real money is in play elsewhere on the page.
+//
+// Demo gateways never appear as a choice. The API still offers the test
+// provider outside production, but a buyer must not be able to pick a method
+// that completes without charging anything; `visibleMethods` is the one filter
+// that enforces it.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout } from "@/lib/checkout";
@@ -24,20 +30,23 @@ import { AppleIcon, CardIcon, CheckIcon, LockIcon, ShieldIcon } from "@/componen
 import { money } from "@/lib/format";
 import { confirmMockOrder, getPaymentMethods } from "@/lib/api";
 import { startPayHerePayment } from "@/lib/payhere";
+import { startRedirectPayment } from "@/lib/gateway-redirect";
 import { createLogger } from "@/lib/logger";
 import { buyerIsComplete } from "@/lib/validation";
 import type { PaymentMethod, PaymentProviderId } from "@/lib/types";
 
 const log = createLogger("checkout.payment");
 
-/** Apple Pay is rendered from here rather than from the API list: it is a
- *  wallet button, not one of the API's gateways, and it keeps its own
- *  presentation. `via` names the provider that actually settles it. */
-const APPLE_PAY_VIA: PaymentProviderId = "mock";
+/** The provider a free order settles through. Nothing is charged, so no real
+ *  gateway is involved — the order still has to become a real, PAID order
+ *  server-side, and this is the provider that does that without a payment
+ *  page. Not offered as a choice anywhere; see `visibleMethods`. */
+const FREE_ORDER_VIA: PaymentProviderId = "mock";
 
 export default function PaymentStep() {
   const router = useRouter();
-  const { hydrated, totals, buyer, placeOrder, awaitPaidOrder } = useCheckout();
+  const { hydrated, event, totals, buyer, placeOrder, awaitPaidOrder } =
+    useCheckout();
 
   const [methods, setMethods] = useState<PaymentMethod[] | null>(null);
   const [selected, setSelected] = useState<PaymentProviderId | null>(null);
@@ -46,6 +55,8 @@ export default function PaymentStep() {
 
   const isFree = totals.total === 0;
   const busy = status !== "idle";
+  // Everything on this page is denominated in the event's currency.
+  const currency = event?.currency;
 
   // The details step is the only thing that populates `buyer`, and reaching
   // this page is otherwise pure forward navigation — back/forward, a restored
@@ -64,19 +75,31 @@ export default function PaymentStep() {
     }
   }, [hydrated, incompleteBuyer, busy, router]);
 
-  // Which gateways this server can run. An empty list is a legitimate answer
-  // (nothing configured) and renders as an explanation, not a crash.
+  // Which gateways this server can run FOR THIS EVENT'S CURRENCY — a JPY
+  // event offers KOMOJU, a USD one PayHere. An empty list is a legitimate
+  // answer (a currency whose gateway isn't signed yet) and renders as an
+  // explanation, not a crash.
   useEffect(() => {
     let stale = false;
-    getPaymentMethods()
+    getPaymentMethods(currency)
       .then((list) => {
         if (stale) return;
         setMethods(list);
-        // Default to the first real (non-demo) method so the common case takes
-        // no clicks; fall back to whatever exists.
-        setSelected(list.find((m) => !m.demo)?.id ?? list[0]?.id ?? null);
+        // Only real gateways are selectable, so the default is simply the
+        // first one — there is no longer a demo entry to skip past.
+        const real = list.filter((m) => !m.demo);
+        setSelected(real[0]?.id ?? null);
         if (list.length === 0) {
-          log.error("the API offers no payment methods — checkout cannot complete");
+          log.error("no payment methods for this event's currency", { currency });
+        } else if (real.length === 0) {
+          // The buyer sees "no payment methods available", which is true but
+          // reads like a currency with no gateway signed. It isn't: the server
+          // offered only the test provider, which this page refuses to show.
+          // Almost always a deployment missing its gateway credentials.
+          log.error("only demo payment methods on offer — nothing a buyer can pick", {
+            currency,
+            offered: list.map((m) => m.id).join(","),
+          });
         }
       })
       .catch((err) => {
@@ -85,6 +108,7 @@ export default function PaymentStep() {
         // Without this the buyer sees an empty payment step that looks like a
         // design, not a failure.
         log.error("could not load payment methods", {
+          currency,
           cause: err instanceof Error ? err.message : String(err),
         });
         setError("We couldn't load the payment options. Please refresh and try again.");
@@ -92,9 +116,11 @@ export default function PaymentStep() {
     return () => {
       stale = true;
     };
-  }, []);
+  }, [currency]);
 
-  const mockAvailable = methods?.some((m) => m.id === APPLE_PAY_VIA) ?? false;
+  // The list a buyer may actually choose from. `null` still means "loading" —
+  // an empty array after filtering is a real answer and renders as one.
+  const visibleMethods = methods?.filter((m) => !m.demo) ?? null;
 
   /**
    * The whole payment run for one attempt: create the order, settle it with
@@ -124,6 +150,14 @@ export default function PaymentStep() {
       }
 
       try {
+        if (order.payment?.kind === "redirect") {
+          // Hosted-page gateway (KOMOJU): the buyer leaves this site and comes
+          // back to the confirmation page, which polls. Nothing more happens
+          // here — the page is about to unload.
+          setStatus("paying");
+          startRedirectPayment(order.payment, order.code);
+          return;
+        }
         if (order.payment) {
           setStatus("paying");
           const outcome = await startPayHerePayment(order.payment, order.code);
@@ -188,41 +222,44 @@ export default function PaymentStep() {
       <div className="max-w-md">
         {!isFree && (
           <>
-            {/* Apple Pay — the express lane, kept above the method list. */}
+            {/* Apple Pay — the express lane's slot, held but not yet wired to
+                a merchant flow. Inert on purpose: it used to settle through
+                the test provider, and a wallet button that completes an order
+                without taking money is worse than one that plainly says it
+                isn't ready. */}
             <button
-              onClick={() => pay(APPLE_PAY_VIA)}
-              disabled={busy || !mockAvailable}
-              title={mockAvailable ? undefined : "Apple Pay isn't available yet on this site"}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#111111] py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              type="button"
+              disabled
+              aria-describedby="apple-pay-status"
+              title="Apple Pay isn't available on this site yet"
+              className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-[#111111] py-3 text-sm font-semibold text-white opacity-40"
             >
               <AppleIcon width={17} height={17} /> Pay
             </button>
-            {mockAvailable && (
-              <p className="mt-1.5 text-center text-xs text-faint">
-                Demo — completes instantly without charging a card.
-              </p>
-            )}
+            <p id="apple-pay-status" className="mt-1.5 text-center text-xs text-faint">
+              Coming soon
+            </p>
 
             <div className="my-5 flex items-center gap-3 text-xs text-faint">
               <span className="h-px flex-1 bg-line" /> or choose a payment method
               <span className="h-px flex-1 bg-line" />
             </div>
 
-            {methods === null && (
+            {visibleMethods === null && (
               <div className="flex flex-col gap-2.5" aria-busy="true">
                 <div className="h-16 animate-pulse rounded-xl bg-surface-2" />
                 <div className="h-16 animate-pulse rounded-xl bg-surface-2" />
               </div>
             )}
 
-            {methods?.length === 0 && (
+            {visibleMethods?.length === 0 && (
               <p className="rounded-xl border border-line bg-surface-2 px-4 py-3 text-sm text-muted">
                 No payment methods are available right now. Please try again shortly.
               </p>
             )}
 
             <div className="flex flex-col gap-2.5">
-              {methods?.map((method) => (
+              {visibleMethods?.map((method) => (
                 <label
                   key={method.id}
                   className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3.5 transition-colors ${
@@ -245,15 +282,10 @@ export default function PaymentStep() {
                   />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2 text-sm font-semibold text-fg">
-                      {method.id === "payhere" && (
+                      {(method.id === "payhere" || method.id === "komoju") && (
                         <CardIcon width={16} height={16} className="text-faint" />
                       )}
                       {method.label}
-                      {method.demo && (
-                        <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-faint">
-                          Demo
-                        </span>
-                      )}
                     </span>
                     <span className="mt-0.5 block text-xs text-muted">{method.blurb}</span>
                   </span>
@@ -266,6 +298,13 @@ export default function PaymentStep() {
                 <LockIcon width={13} height={13} className="mt-0.5 shrink-0" />
                 Your card details are entered on PayHere&rsquo;s secure form and never reach this
                 site.
+              </p>
+            )}
+            {selected === "komoju" && (
+              <p className="mt-3 flex items-start gap-1.5 text-xs text-faint">
+                <LockIcon width={13} height={13} className="mt-0.5 shrink-0" />
+                You&rsquo;ll be taken to KOMOJU&rsquo;s secure page to pay, then brought back here
+                — your details never reach this site.
               </p>
             )}
           </>
@@ -285,7 +324,7 @@ export default function PaymentStep() {
             onClick={() => {
               // A free order still becomes a real order server-side; it just
               // needs a provider that settles without a payment page.
-              const provider = isFree ? APPLE_PAY_VIA : selected;
+              const provider = isFree ? FREE_ORDER_VIA : selected;
               if (!provider) {
                 setError("Pick a payment method to continue.");
                 return;
@@ -303,7 +342,7 @@ export default function PaymentStep() {
             ) : (
               <>
                 <LockIcon width={16} height={16} />
-                {isFree ? "Confirm order" : `Pay ${money(totals.total)}`}
+                {isFree ? "Confirm order" : `Pay ${money(totals.total, currency)}`}
               </>
             )}
           </button>

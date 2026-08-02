@@ -36,6 +36,14 @@ export default function TicketsStep() {
     event?.tiers.filter((t) => (lines[t.id] ?? 0) > 0).length ?? 0;
   const linesProblem = cartLinesError(distinctTiers);
 
+  // A cart survives in sessionStorage, so it can outlive the sale it was
+  // started from. Without this the buyer walks three more steps and is
+  // refused at payment, which is where the API stops them regardless.
+  const closed = Boolean(event?.ended || event?.salesClosed);
+  const closedReason = event?.ended
+    ? "This event has already taken place."
+    : "Ticket sales for this event have closed.";
+
   return (
     <CheckoutShell
       step="tickets"
@@ -43,16 +51,24 @@ export default function TicketsStep() {
       subtitle={event ? `${event.title} · ${event.venue}` : undefined}
       action={
         <div className="flex items-center justify-between gap-4">
-          <p className={`text-sm ${linesProblem ? "text-danger" : "text-muted"}`}>
-            {linesProblem
-              ? linesProblem
-              : totals.count === 0
-                ? "Add at least one ticket to continue."
-                : `${totals.count} ticket${totals.count > 1 ? "s" : ""} · ${money(totals.total)} total`}
+          {/* A closed sale outranks everything else — nothing in this cart can
+              proceed — so it takes the line before the tier-count problem. */}
+          <p
+            className={`text-sm ${
+              closed ? "text-warning" : linesProblem ? "text-danger" : "text-muted"
+            }`}
+          >
+            {closed
+              ? closedReason
+              : linesProblem
+                ? linesProblem
+                : totals.count === 0
+                  ? "Add at least one ticket to continue."
+                  : `${totals.count} ticket${totals.count > 1 ? "s" : ""} · ${money(totals.total, event?.currency)} total`}
           </p>
           <button
             onClick={() => router.push("/checkout/details")}
-            disabled={totals.count === 0 || !!linesProblem}
+            disabled={totals.count === 0 || closed || !!linesProblem}
             className="flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-fg transition-all hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Continue
@@ -87,7 +103,7 @@ export default function TicketsStep() {
                   <p className="mt-0.5 text-sm text-muted">{t.blurb}</p>
                   <p className="mt-1 text-sm">
                     <span className="font-semibold text-fg">
-                      {t.soldOut ? "Sold out" : money(t.price)}
+                      {t.soldOut ? "Sold out" : money(t.price, event?.currency)}
                     </span>
                     {!t.soldOut && t.available <= 24 && (
                       <span className="ml-2 text-warning">{t.available} left</span>

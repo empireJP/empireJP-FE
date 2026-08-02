@@ -97,6 +97,10 @@ export interface EventsQuery {
   city?: City;
   q?: string;
   featured?: boolean;
+  /** `true` = still to come, `false` = already over, omitted = both. The
+   *  landing page's rails ask for `true`; Explore and search leave it off so
+   *  past events stay findable, labelled as ended. */
+  upcoming?: boolean;
   sort?: "date" | "trending";
   page?: number;
   limit?: number;
@@ -140,16 +144,56 @@ export async function getEvent(slug: string): Promise<EventItem | undefined> {
 // --- Checkout ---------------------------------------------------------------
 
 /**
- * Payment methods this API server can actually run.
+ * Payment methods this API server can actually run — for the given currency.
  *
  * The list is server-owned rather than hardcoded here because it depends on
  * *that server's* configuration: a deployment without PayHere credentials must
  * not offer "Card / Bank", and the instant-completing `mock` method must never
- * appear in production. Empty is a legitimate answer (nothing is configured) —
+ * appear in production. `currency` (the event's) narrows it to gateways that
+ * can charge it — a JPY event offers KOMOJU, a USD one PayHere. Empty is a
+ * legitimate answer (a pricing currency whose gateway isn't signed yet) —
  * the payment step renders that as an explanatory message, not a crash.
  */
-export async function getPaymentMethods(): Promise<PaymentMethod[]> {
-  const { data } = await apiFetch<PaymentMethod[]>("/payments/methods");
+export async function getPaymentMethods(currency?: string): Promise<PaymentMethod[]> {
+  const qs = currency ? `?currency=${encodeURIComponent(currency)}` : "";
+  const { data } = await apiFetch<PaymentMethod[]>(`/payments/methods${qs}`);
+  return data;
+}
+
+export interface ValidateCouponInput {
+  code: string;
+  eventSlug: string;
+  lines: CartLine[];
+  /** Only used for the API's per-buyer redemption cap, and only once the
+   *  buyer has actually typed an address — omitting it defers that one check
+   *  to order creation. */
+  email?: string;
+}
+
+export interface ValidatedCoupon {
+  /** Normalized (uppercased) by the API — display this, not what was typed. */
+  code: string;
+  discount: number;
+}
+
+/**
+ * Asks the API what a promo code is worth on this exact cart.
+ *
+ * The answer is a *preview*. Order creation recomputes the discount from the
+ * code, so nothing here can change what the buyer is charged — which is also
+ * why it is safe to call on every cart change. Throws ApiError with a
+ * buyer-readable message (expired, wrong event, fully redeemed) on 422; the
+ * caller shows it verbatim.
+ */
+export async function validateCoupon(input: ValidateCouponInput): Promise<ValidatedCoupon> {
+  const { data } = await apiFetch<ValidatedCoupon>("/coupons/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // Attaches the session when there is one, so a signed-in buyer's per-user
+    // cap is checked here rather than surfacing at checkout.
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
   return data;
 }
 
@@ -164,7 +208,7 @@ export interface CreateOrderInput {
 /**
  * Creates the order and gets back what the browser must do to pay for it.
  *
- * Only tier ids and quantities are sent — every price, fee and discount is
+ * Only tier ids and quantities are sent — every price and discount is
  * computed server-side, so the totals shown alongside are a display of the
  * cart, never an input to the charge. The order comes back PENDING and holds
  * its inventory for a fixed window; it becomes PAID only when the gateway's

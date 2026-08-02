@@ -276,7 +276,7 @@ export default function AccountPage() {
                       </div>
                       <div className="text-right text-xs">
                         <p className="font-mono font-semibold text-fg">{order.code}</p>
-                        <p className="text-muted">{money(order.total)}</p>
+                        <p className="text-muted">{money(order.total, order.currency)}</p>
                       </div>
                     </div>
                     {event && (
