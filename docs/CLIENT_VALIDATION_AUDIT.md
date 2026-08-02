@@ -20,6 +20,21 @@ the record of what was wrong and why. What landed:
 `npx tsc --noEmit` is clean; `npx eslint lib app components` holds at the
 documented 8-error baseline (no new errors).
 
+### Re-audited after merging `dev`
+
+`dev` brought currency-aware pricing, API-validated promo codes, ended/closed
+events, the service fee dropped from checkout, and demo payment methods hidden.
+Re-checked the whole input surface afterwards: **no new user-input forms
+landed**, so no new validators were needed. What changed here:
+
+- The coupon field's shape check now runs *before* the (newly async) API call,
+  so an unusable code costs no round trip, and its message shares the same
+  element as the API's `couponError`.
+- The tickets step shows the closed-sale message ahead of the tier-count one —
+  a closed sale outranks it, since nothing in the cart can proceed.
+- `GetTicketsButton` already guards ended / sales-closed / sold-out with
+  reasons on both hover and focus; left alone.
+
 ### Notes for reviewers
 
 - **`maxLength` was deliberately not used** on name / phone / city / promo
