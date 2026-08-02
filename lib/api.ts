@@ -140,16 +140,19 @@ export async function getEvent(slug: string): Promise<EventItem | undefined> {
 // --- Checkout ---------------------------------------------------------------
 
 /**
- * Payment methods this API server can actually run.
+ * Payment methods this API server can actually run — for the given currency.
  *
  * The list is server-owned rather than hardcoded here because it depends on
  * *that server's* configuration: a deployment without PayHere credentials must
  * not offer "Card / Bank", and the instant-completing `mock` method must never
- * appear in production. Empty is a legitimate answer (nothing is configured) —
+ * appear in production. `currency` (the event's) narrows it to gateways that
+ * can charge it — a JPY event offers KOMOJU, a USD one PayHere. Empty is a
+ * legitimate answer (a pricing currency whose gateway isn't signed yet) —
  * the payment step renders that as an explanatory message, not a crash.
  */
-export async function getPaymentMethods(): Promise<PaymentMethod[]> {
-  const { data } = await apiFetch<PaymentMethod[]>("/payments/methods");
+export async function getPaymentMethods(currency?: string): Promise<PaymentMethod[]> {
+  const qs = currency ? `?currency=${encodeURIComponent(currency)}` : "";
+  const { data } = await apiFetch<PaymentMethod[]>(`/payments/methods${qs}`);
   return data;
 }
 

@@ -168,7 +168,7 @@ export default async function EventPage({
                 <TicketIcon width={16} height={16} className="text-muted" /> Tickets
               </span>
               <span className="text-sm text-muted">
-                {soldOut ? "Sold out" : from === 0 ? "Free" : `from ${money(from!)}`}
+                {soldOut ? "Sold out" : from === 0 ? "Free" : `from ${money(from!, event.currency)}`}
               </span>
             </div>
 
@@ -196,7 +196,9 @@ export default async function EventPage({
                     )}
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className="font-semibold text-fg">{t.soldOut ? "—" : money(t.price)}</p>
+                    <p className="font-semibold text-fg">
+                      {t.soldOut ? "—" : money(t.price, event.currency)}
+                    </p>
                     <p className={`text-xs ${!t.soldOut && t.available <= 24 ? "text-warning" : "text-faint"}`}>
                       {t.soldOut ? "Sold out" : t.available <= 24 ? `${t.available} left` : "Available"}
                     </p>

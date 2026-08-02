@@ -24,6 +24,7 @@ import { AppleIcon, CardIcon, CheckIcon, LockIcon, ShieldIcon } from "@/componen
 import { money } from "@/lib/format";
 import { confirmMockOrder, getPaymentMethods } from "@/lib/api";
 import { startPayHerePayment } from "@/lib/payhere";
+import { startRedirectPayment } from "@/lib/gateway-redirect";
 import { createLogger } from "@/lib/logger";
 import type { PaymentMethod, PaymentProviderId } from "@/lib/types";
 
@@ -36,7 +37,7 @@ const APPLE_PAY_VIA: PaymentProviderId = "mock";
 
 export default function PaymentStep() {
   const router = useRouter();
-  const { totals, buyer, placeOrder, awaitPaidOrder } = useCheckout();
+  const { event, totals, buyer, placeOrder, awaitPaidOrder } = useCheckout();
 
   const [methods, setMethods] = useState<PaymentMethod[] | null>(null);
   const [selected, setSelected] = useState<PaymentProviderId | null>(null);
@@ -45,12 +46,16 @@ export default function PaymentStep() {
 
   const isFree = totals.total === 0;
   const busy = status !== "idle";
+  // Everything on this page is denominated in the event's currency.
+  const currency = event?.currency;
 
-  // Which gateways this server can run. An empty list is a legitimate answer
-  // (nothing configured) and renders as an explanation, not a crash.
+  // Which gateways this server can run FOR THIS EVENT'S CURRENCY — a JPY
+  // event offers KOMOJU, a USD one PayHere. An empty list is a legitimate
+  // answer (a currency whose gateway isn't signed yet) and renders as an
+  // explanation, not a crash.
   useEffect(() => {
     let stale = false;
-    getPaymentMethods()
+    getPaymentMethods(currency)
       .then((list) => {
         if (stale) return;
         setMethods(list);
@@ -58,7 +63,7 @@ export default function PaymentStep() {
         // no clicks; fall back to whatever exists.
         setSelected(list.find((m) => !m.demo)?.id ?? list[0]?.id ?? null);
         if (list.length === 0) {
-          log.error("the API offers no payment methods — checkout cannot complete");
+          log.error("no payment methods for this event's currency", { currency });
         }
       })
       .catch((err) => {
@@ -67,6 +72,7 @@ export default function PaymentStep() {
         // Without this the buyer sees an empty payment step that looks like a
         // design, not a failure.
         log.error("could not load payment methods", {
+          currency,
           cause: err instanceof Error ? err.message : String(err),
         });
         setError("We couldn't load the payment options. Please refresh and try again.");
@@ -74,7 +80,7 @@ export default function PaymentStep() {
     return () => {
       stale = true;
     };
-  }, []);
+  }, [currency]);
 
   const mockAvailable = methods?.some((m) => m.id === APPLE_PAY_VIA) ?? false;
 
@@ -106,6 +112,14 @@ export default function PaymentStep() {
       }
 
       try {
+        if (order.payment?.kind === "redirect") {
+          // Hosted-page gateway (KOMOJU): the buyer leaves this site and comes
+          // back to the confirmation page, which polls. Nothing more happens
+          // here — the page is about to unload.
+          setStatus("paying");
+          startRedirectPayment(order.payment, order.code);
+          return;
+        }
         if (order.payment) {
           setStatus("paying");
           const outcome = await startPayHerePayment(order.payment, order.code);
@@ -227,7 +241,7 @@ export default function PaymentStep() {
                   />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2 text-sm font-semibold text-fg">
-                      {method.id === "payhere" && (
+                      {(method.id === "payhere" || method.id === "komoju") && (
                         <CardIcon width={16} height={16} className="text-faint" />
                       )}
                       {method.label}
@@ -248,6 +262,13 @@ export default function PaymentStep() {
                 <LockIcon width={13} height={13} className="mt-0.5 shrink-0" />
                 Your card details are entered on PayHere&rsquo;s secure form and never reach this
                 site.
+              </p>
+            )}
+            {selected === "komoju" && (
+              <p className="mt-3 flex items-start gap-1.5 text-xs text-faint">
+                <LockIcon width={13} height={13} className="mt-0.5 shrink-0" />
+                You&rsquo;ll be taken to KOMOJU&rsquo;s secure page to pay, then brought back here
+                — your details never reach this site.
               </p>
             )}
           </>
@@ -285,7 +306,7 @@ export default function PaymentStep() {
             ) : (
               <>
                 <LockIcon width={16} height={16} />
-                {isFree ? "Confirm order" : `Pay ${money(totals.total)}`}
+                {isFree ? "Confirm order" : `Pay ${money(totals.total, currency)}`}
               </>
             )}
           </button>

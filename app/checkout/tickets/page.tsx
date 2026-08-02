@@ -31,7 +31,7 @@ export default function TicketsStep() {
           <p className="text-sm text-muted">
             {totals.count === 0
               ? "Add at least one ticket to continue."
-              : `${totals.count} ticket${totals.count > 1 ? "s" : ""} · ${money(totals.total)} total`}
+              : `${totals.count} ticket${totals.count > 1 ? "s" : ""} · ${money(totals.total, event?.currency)} total`}
           </p>
           <button
             onClick={() => router.push("/checkout/details")}
@@ -68,7 +68,7 @@ export default function TicketsStep() {
                   <p className="mt-0.5 text-sm text-muted">{t.blurb}</p>
                   <p className="mt-1 text-sm">
                     <span className="font-semibold text-fg">
-                      {t.soldOut ? "Sold out" : money(t.price)}
+                      {t.soldOut ? "Sold out" : money(t.price, event?.currency)}
                     </span>
                     {!t.soldOut && t.available <= 24 && (
                       <span className="ml-2 text-warning">{t.available} left</span>

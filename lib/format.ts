@@ -7,14 +7,33 @@ function parse(iso: string) {
   return new Date(iso);
 }
 
-/** $3,500 (whole dollars) */
-export function money(n: number) {
-  return n === 0 ? "Free" : "$" + n.toLocaleString("en-US");
+// Money is formatted in the currency the event was priced in — the API sends
+// `currency` on events and orders, and amounts are already display numbers in
+// that currency ($45 is 45, ¥12,000 is 12000; the BE serializer owns the
+// minor-unit math). The default stays USD so call sites without a currency
+// (the mock dashboard data) keep rendering as before.
+//
+// Intl.NumberFormat knows each currency's decimal rules, so JPY never grows
+// ".00" and USD keeps cents only when they exist. en-US locale everywhere —
+// the UI language, not the buyer's — so "¥12,000" and "$45" stay stable.
+function formatCurrency(n: number, currency: string) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: Number.isInteger(n) ? 0 : 2,
+  }).format(n);
 }
 
-/** Always shows the number, e.g. $0 */
-export function amount(n: number) {
-  return "$" + n.toLocaleString("en-US");
+/** "$3,500" / "¥12,000" — or "Free" for zero. */
+export function money(n: number, currency: string = "USD") {
+  return n === 0 ? "Free" : formatCurrency(n, currency);
+}
+
+/** Always shows the number, e.g. "$0" — for totals rows where "Free" reads
+ *  wrong. */
+export function amount(n: number, currency: string = "USD") {
+  return formatCurrency(n, currency);
 }
 
 /** "Sat, Aug 15" */

@@ -381,9 +381,32 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
         provider: created.paymentProvider,
       });
       setState((s) => ({ ...s, order: created }));
+      // ALSO persisted synchronously, not only via the state effect: a
+      // redirect-style gateway (KOMOJU) navigates away in the same tick, and
+      // React's persist effect may not have run yet — without this line the
+      // buyer would come back from the hosted page to an empty cart.
+      try {
+        sessionStorage.setItem(
+          KEY,
+          JSON.stringify({
+            eventSlug: state.eventSlug,
+            lines: state.lines,
+            buyer: state.buyer,
+            coupon: state.coupon,
+            order: created,
+          } satisfies Persisted),
+        );
+      } catch {
+        // Storage quota/privacy mode — the state effect is the primary path;
+        // this is only the navigation race-guard, so a miss is survivable.
+        log.warn("could not persist the order before redirect", { code: created.code });
+      }
       return created;
     },
-    [event, state.lines, state.buyer, state.coupon, coupon.error],
+    // `state.eventSlug` for the pre-redirect persist above; `coupon.error` so
+    // a code that has stopped applying is dropped from the order rather than
+    // failing it.
+    [event, state.eventSlug, state.lines, state.buyer, state.coupon, coupon.error],
   );
 
   // Both take the order explicitly rather than reading it out of state. The

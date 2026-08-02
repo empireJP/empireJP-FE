@@ -42,6 +42,11 @@ export interface EventItem {
   lineupLabel: string; // "Lineup" | "Speakers" | "Performers"
   lineup: Performer[];
   description: string[];
+  /** ISO code every tier price/fee is denominated in ("USD", "JPY", …).
+   *  Format money with it (lib/format money/amount) — never a hardcoded "$".
+   *  Optional only because the legacy mock data in lib/data.ts predates it;
+   *  the API always sends it, and formatting falls back to USD. */
+  currency?: string;
   tiers: TicketTier[];
   image: string; // cover image path under /public
   trailerUrl?: string; // mp4/webm URL, or a YouTube/Vimeo link
@@ -62,6 +67,9 @@ export interface Order {
    *  the confirmation page polls on it rather than assuming success. Tickets
    *  are `[]` for anything but PAID. */
   status?: "PENDING" | "PAID" | "EXPIRED" | "CANCELLED" | "REFUNDED" | "PARTIALLY_REFUNDED";
+  /** ISO code every amount on this order is denominated in. Optional because
+   *  orders persisted in browser storage predate it; falls back to USD. */
+  currency?: string;
   eventSlug: string;
   eventTitle: string;
   lines: { tierName: string; qty: number; price: number }[];
@@ -75,9 +83,12 @@ export interface Order {
   tickets: { code: string; tierName: string; holder: string }[];
 }
 
-/** Gateway ids the API accepts on POST /orders. `mock` completes instantly
- *  without charging anything and is only offered on non-production servers. */
-export type PaymentProviderId = "payhere" | "mock";
+/** Gateway ids the API accepts on POST /orders. Which of them an event's
+ *  checkout actually offers depends on its currency — the API's
+ *  /payments/methods?currency= is the authority. `komoju` is the JPY lane
+ *  (JCB, konbini, PayPay); `mock` completes instantly without charging
+ *  anything and is only offered on non-production servers. */
+export type PaymentProviderId = "payhere" | "komoju" | "mock";
 
 /** One row of GET /payments/methods — what THIS server can actually run.
  *  Rendering the payment step from this rather than a hardcoded list is what
