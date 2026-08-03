@@ -4,8 +4,13 @@ import { EventCover } from "./EventCover";
 import { CalendarIcon, DownloadIcon, PinIcon } from "./Icons";
 import { dateShort, to12h } from "@/lib/format";
 
-export function ticketValue(order: Order, code: string) {
-  return `https://empire.tickets/t/${order.code}/${code}`;
+// The QR payload is the BARE ticket code — the same thing the BE's emailed
+// QR PNGs encode, and exactly what the door scanner's check-in endpoint
+// expects (empireJP-BE docs/DECISIONS.md 2026-07-23: trust lives in
+// server-side validation at scan time, not in the payload). Kept as a helper
+// so every QR on the page renders from one definition.
+export function ticketValue(code: string) {
+  return code;
 }
 
 export function QRTicket({
@@ -21,7 +26,7 @@ export function QRTicket({
   index: number;
   onDownload?: () => void;
 }) {
-  const value = ticketValue(order, ticket.code);
+  const value = ticketValue(ticket.code);
   return (
     <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-card)]">
       {/* accent strip */}

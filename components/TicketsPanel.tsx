@@ -132,7 +132,7 @@ export function TicketsPanel({ event, order }: { event: EventItem; order: Order 
         {order.tickets.map((t) => (
           <QRCodeCanvas
             key={t.code}
-            value={ticketValue(order, t.code)}
+            value={ticketValue(t.code)}
             size={256}
             level="M"
             bgColor="#ffffff"
