@@ -2,9 +2,9 @@
 //
 // This is the fallback, not the main path. An event created through the
 // Admin-FE location picker carries the exact point the organizer chose, and
-// `VenueMap` plots that directly — see `resolveVenueLocation`. Only the older
-// catalog, seeded before the picker existed, reaches this module, where all we
-// have is "venue / area / city" as free text.
+// `components/VenueMap.tsx` plots that directly without calling this at all.
+// Only the older catalog, seeded before the picker existed, reaches this
+// module, where all we have is "venue / area / city" as free text.
 //
 // That distinction is the whole point of `precision`. Text lookup answers a
 // different question than the picker does: it can tell us the venue, or it can
@@ -33,14 +33,17 @@ const USER_AGENT = "empireJP-FE (+https://github.com/empireJP)";
  * Sri Lanka — a first-pass bias, not a filter on every lookup.
  *
  * It was a filter, on the premise that "`City` is Colombo-only, so every venue
- * is Sri Lankan". The API never guaranteed that — `city` is free text there
- * (`z.string().min(1).max(120)`) — and once the catalog went international the
- * filter made every foreign event permanently unmappable: `q=Las Vegas` with
- * `countrycodes=lk` returns `[]`, and the city without it.
+ * is Sri Lankan". That premise is no longer true: `city` is free text on the
+ * API (`events.manage.schemas.ts` — `z.string().min(1).max(120)`), and the
+ * catalog now carries events well outside Sri Lanka. `countrycodes=lk` made
+ * every one of them permanently unmappable — a search for "Las Vegas" returns
+ * `[]` with the filter and the city without it — so the map fell back to its
+ * placeholder while "Open in Maps", which never had the filter, worked fine.
+ * That mismatch is exactly what made it look like a rendering fault.
  *
- * The bias still earns its keep on the first pass. The catalog has a venue
- * called "Port City Arena", and bare "Port City" unbiased resolves to
- * Fremantle, Western Australia.
+ * The bias still earns its keep on the first pass: the catalog really does
+ * have a venue called "Port City Arena", and bare "Port City" unbiased
+ * resolves to Fremantle, Western Australia.
  */
 const COUNTRY_CODES = "lk";
 
@@ -93,7 +96,7 @@ export async function geocodeVenue(place: VenueParts): Promise<VenuePoint | null
   // Two passes over that chain. The first keeps the Sri Lanka bias, so a local
   // venue with an ambiguous name still resolves locally; the second drops it,
   // so an event in Las Vegas can find itself at all. The order is load-bearing
-  // — reversed, "Port City" goes to Australia.
+  // — reversed, "Port City" goes to Fremantle.
   //
   // Only a venue that misses every biased query pays for the second pass, and
   // Nominatim's answer is cached for a month either way (a miss is a cached
