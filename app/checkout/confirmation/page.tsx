@@ -150,7 +150,7 @@ export default function ConfirmationStep() {
             <div className="text-muted">
               {dateLong(event.date)} · {to12h(event.startTime)}
             </div>
-            <div className="font-semibold text-fg">{money(order.total)}</div>
+            <div className="font-semibold text-fg">{money(order.total, order.currency)}</div>
           </div>
 
           {/* tickets */}

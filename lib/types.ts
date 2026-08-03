@@ -16,8 +16,9 @@ export interface Performer {
 export interface TicketTier {
   id: string;
   name: string;
-  price: number; // USD, excl. fee
-  fee: number; // per-ticket service fee
+  /** What the buyer pays per ticket. Nothing is added on top at checkout —
+   *  the platform's commission is charged to the organizer at settlement. */
+  price: number;
   blurb: string;
   perks?: string[];
   available: number;
@@ -42,12 +43,29 @@ export interface EventItem {
   lineupLabel: string; // "Lineup" | "Speakers" | "Performers"
   lineup: Performer[];
   description: string[];
+  /** ISO code every tier price is denominated in ("USD", "JPY", …).
+   *  Format money with it (lib/format money/amount) — never a hardcoded "$".
+   *  Optional only because the legacy mock data in lib/data.ts predates it;
+   *  the API always sends it, and formatting falls back to USD. */
+  currency?: string;
   tiers: TicketTier[];
   image: string; // cover image path under /public
   trailerUrl?: string; // mp4/webm URL, or a YouTube/Vimeo link
   accent: string; // dominant color for small solid accents
   attending: number;
   capacity: number;
+  /** The show is over. Server-computed and absent (not `false`) while it is
+   *  still to come.
+   *
+   *  Don't re-derive this from `date`/`startTime`/`endTime`: those are Colombo
+   *  wall-clock strings, and `endTime <= startTime` means the night runs past
+   *  midnight — two ways to get "is it over" wrong in a browser, on the
+   *  question that gates the buy button. */
+  ended?: true;
+  /** Tickets can no longer be bought. Usually arrives with `ended`, but a
+   *  business can close sales early (advance-only) or late (a grace window),
+   *  so an event can be sales-closed while still running. */
+  salesClosed?: true;
   featured?: boolean;
 }
 
@@ -62,22 +80,29 @@ export interface Order {
    *  the confirmation page polls on it rather than assuming success. Tickets
    *  are `[]` for anything but PAID. */
   status?: "PENDING" | "PAID" | "EXPIRED" | "CANCELLED" | "REFUNDED" | "PARTIALLY_REFUNDED";
+  /** ISO code every amount on this order is denominated in. Optional because
+   *  orders persisted in browser storage predate it; falls back to USD. */
+  currency?: string;
   eventSlug: string;
   eventTitle: string;
   lines: { tierName: string; qty: number; price: number }[];
   subtotal: number;
-  fees: number;
   discount: number;
   couponCode?: string;
+  /** `subtotal - discount`. No service fee is added to the buyer's total —
+   *  the platform commission is deducted from the organizer at settlement. */
   total: number;
   buyerName: string;
   buyerEmail: string;
   tickets: { code: string; tierName: string; holder: string }[];
 }
 
-/** Gateway ids the API accepts on POST /orders. `mock` completes instantly
- *  without charging anything and is only offered on non-production servers. */
-export type PaymentProviderId = "payhere" | "mock";
+/** Gateway ids the API accepts on POST /orders. Which of them an event's
+ *  checkout actually offers depends on its currency — the API's
+ *  /payments/methods?currency= is the authority. `komoju` is the JPY lane
+ *  (JCB, konbini, PayPay); `mock` completes instantly without charging
+ *  anything and is only offered on non-production servers. */
+export type PaymentProviderId = "payhere" | "komoju" | "mock";
 
 /** One row of GET /payments/methods — what THIS server can actually run.
  *  Rendering the payment step from this rather than a hardcoded list is what

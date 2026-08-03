@@ -10,18 +10,29 @@ export function OrderSummary() {
   const { event, lines, totals, coupon, applyCoupon, removeCoupon } = useCheckout();
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
 
   if (!event) return null;
   const active = event.tiers.filter((t) => (lines[t.id] ?? 0) > 0);
+  // Every amount in this panel is denominated in the event's currency.
+  const ccy = event.currency;
 
-  function submit(e: React.FormEvent) {
+  // Applying is a round trip now — the API owns every coupon rule, so this
+  // can't be answered locally.
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const res = applyCoupon(code);
-    if (res.ok) {
-      setError("");
-      setCode("");
-    } else {
-      setError(res.error ?? "");
+    if (checking) return;
+    setChecking(true);
+    try {
+      const res = await applyCoupon(code);
+      if (res.ok) {
+        setError("");
+        setCode("");
+      } else {
+        setError(res.error ?? "");
+      }
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -63,7 +74,7 @@ export function OrderSummary() {
                   <span className="text-muted">
                     {t.name} <span className="text-faint">× {qty}</span>
                   </span>
-                  <span className="tnum font-medium text-fg">{money(t.price * qty)}</span>
+                  <span className="tnum font-medium text-fg">{money(t.price * qty, ccy)}</span>
                 </div>
               );
             })}
@@ -75,15 +86,30 @@ export function OrderSummary() {
       {totals.count > 0 && (
         <div className="border-t border-line px-4 py-3">
           {coupon ? (
-            <div className="flex items-center justify-between rounded-lg bg-success-soft px-3 py-2 text-sm">
-              <span className="flex items-center gap-1.5 font-semibold text-success">
-                <CheckIcon width={15} height={15} />
+            // An applied code can stop applying as the cart changes (a
+            // targeted tier removed, the minimum spend no longer met), so this
+            // row reports which of the two it currently is.
+            <div
+              className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
+                totals.couponError ? "bg-danger-soft" : "bg-success-soft"
+              }`}
+            >
+              <span
+                className={`flex items-center gap-1.5 font-semibold ${
+                  totals.couponError ? "text-danger" : "text-success"
+                }`}
+              >
+                {!totals.couponError && <CheckIcon width={15} height={15} />}
                 {totals.couponLabel}
               </span>
               <button
                 onClick={removeCoupon}
                 aria-label="Remove coupon"
-                className="grid h-5 w-5 place-items-center rounded-full text-success/80 transition-colors hover:bg-success/15 hover:text-success"
+                className={`grid h-5 w-5 place-items-center rounded-full transition-colors ${
+                  totals.couponError
+                    ? "text-danger/80 hover:bg-danger/15 hover:text-danger"
+                    : "text-success/80 hover:bg-success/15 hover:text-success"
+                }`}
               >
                 <XIcon width={14} height={14} />
               </button>
@@ -96,18 +122,24 @@ export function OrderSummary() {
                   setCode(e.target.value);
                   setError("");
                 }}
+                disabled={checking}
                 placeholder="Promo code"
-                className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm uppercase text-fg placeholder:normal-case placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent"
+                className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm uppercase text-fg placeholder:normal-case placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60"
               />
               <button
                 type="submit"
-                className="shrink-0 rounded-lg border border-line px-3.5 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover"
+                disabled={checking}
+                className="shrink-0 rounded-lg border border-line px-3.5 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-60"
               >
-                Apply
+                {checking ? "Checking…" : "Apply"}
               </button>
             </form>
           )}
-          {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
+          {/* The API's reason, whether it was rejected on apply or stopped
+              applying afterwards. */}
+          {(error || totals.couponError) && (
+            <p className="mt-1.5 text-xs text-danger">{error || totals.couponError}</p>
+          )}
         </div>
       )}
 
@@ -116,21 +148,20 @@ export function OrderSummary() {
         <div className="border-t border-line px-4 py-3 text-sm">
           <div className="flex justify-between text-muted">
             <span>Subtotal</span>
-            <span className="tnum">{amount(totals.subtotal)}</span>
+            <span className="tnum">{amount(totals.subtotal, ccy)}</span>
           </div>
-          <div className="mt-1 flex justify-between text-muted">
-            <span>Service fee</span>
-            <span className="tnum">{amount(totals.fees)}</span>
-          </div>
+          {/* No service-fee row: the buyer pays the ticket price as shown. The
+              platform commission is deducted from the organizer's payout at
+              settlement, so it never reaches the buyer's totals. */}
           {totals.discount > 0 && (
             <div className="mt-1 flex justify-between font-medium text-success">
               <span>Discount</span>
-              <span className="tnum">−{amount(totals.discount)}</span>
+              <span className="tnum">−{amount(totals.discount, ccy)}</span>
             </div>
           )}
           <div className="mt-2 flex justify-between border-t border-line pt-2 text-base font-semibold text-fg">
             <span>Total</span>
-            <span className="tnum">{money(totals.total)}</span>
+            <span className="tnum">{money(totals.total, ccy)}</span>
           </div>
         </div>
       )}

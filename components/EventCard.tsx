@@ -11,16 +11,22 @@ export function fromPrice(e: EventItem) {
   return Math.min(...live.map((t) => t.price));
 }
 
-function priceLabel(from: number | null) {
+function priceLabel(event: EventItem, from: number | null) {
+  // A price on a finished event is noise — nobody can act on it, and
+  // "from $45" beside a show that happened last month reads like it is still
+  // for sale. The corner badge is the same slot either way.
+  if (event.ended) return "Ended";
+  if (event.salesClosed) return "Sales closed";
   if (from === null) return "Sold out";
   if (from === 0) return "Free";
-  return `from ${money(from)}`;
+  return `from ${money(from, event.currency)}`;
 }
 
 export function EventCard({ event }: { event: EventItem }) {
   const from = fromPrice(event);
   const top = event.lineup[0];
   const nearlyFull = event.attending / event.capacity >= 0.9;
+  const over = Boolean(event.ended);
 
   return (
     <Link
@@ -32,14 +38,21 @@ export function EventCard({ event }: { event: EventItem }) {
           src={event.image}
           alt={event.title}
           accent={event.accent}
-          className="absolute inset-0"
+          // Desaturated and dimmed rather than hidden: the card stays
+          // recognisable in a saved list or a search result, while reading as
+          // past at a glance instead of competing with what's still on sale.
+          className={`absolute inset-0 ${over ? "opacity-45 grayscale" : ""}`}
           rounded="rounded-none"
         />
         <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
           {event.category}
         </span>
-        <span className="absolute right-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-xs font-bold text-neutral-900 backdrop-blur-sm">
-          {priceLabel(from)}
+        <span
+          className={`absolute right-3 top-3 rounded-full px-2.5 py-1 text-xs font-bold backdrop-blur-sm ${
+            over ? "bg-black/60 text-white/90" : "bg-white/90 text-neutral-900"
+          }`}
+        >
+          {priceLabel(event, from)}
         </span>
         <SaveButton id={event.id} slug={event.slug} className="absolute bottom-3 right-3" />
       </div>
