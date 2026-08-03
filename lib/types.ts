@@ -43,6 +43,18 @@ export interface EventItem {
   city: City;
   area: string;
   venue: string;
+  /**
+   * The exact point the organizer chose in the dashboard's location picker,
+   * and the full address that came with it.
+   *
+   * Null on events seeded before the picker existed — never substitute a
+   * default. `0, 0` is in the Atlantic, and a map is one of the few places
+   * where a confidently wrong answer is worse than no answer. The venue map
+   * falls back to looking the address up as text, and says that it did.
+   */
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
   date: string; // ISO start
   startTime: string; // "19:00"
   endTime: string; // "23:00"
