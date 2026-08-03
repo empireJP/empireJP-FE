@@ -6,7 +6,15 @@ export type Category =
   | "Trance"
   | "Nightlife";
 
-export type City = "Colombo";
+/**
+ * Any city the API gives us, not a closed set. This was `"Colombo"`, which the
+ * API never guaranteed — `city` is `z.string().min(1).max(120)` there — and a
+ * literal type on a field the server fills is a claim TypeScript can't check at
+ * runtime. It read as a constraint and got used as one: `lib/geocode.ts` pinned
+ * its map lookups to Sri Lanka on the strength of it, which quietly unmapped
+ * every event outside the country.
+ */
+export type City = string;
 
 export interface Performer {
   name: string;

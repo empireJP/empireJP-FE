@@ -18,8 +18,22 @@ const REVALIDATE_SECONDS = 60 * 60 * 24 * 30;
 /** Nominatim rejects requests without one and asks that it name the app. */
 const USER_AGENT = "empireJP-FE (+https://github.com/empireJP)";
 
-/** `City` is Colombo-only, so every venue is Sri Lankan. Bias the search rather
- *  than pasting the country into the query — it keeps "Port City" off Dubai. */
+/**
+ * Sri Lanka — a first-pass bias, not a filter on every lookup.
+ *
+ * It was a filter, on the premise that "`City` is Colombo-only, so every venue
+ * is Sri Lankan". That premise is no longer true: `city` is free text on the
+ * API (`events.manage.schemas.ts` — `z.string().min(1).max(120)`), and the
+ * catalog now carries events well outside Sri Lanka. `countrycodes=lk` made
+ * every one of them permanently unmappable — a search for "Las Vegas" returns
+ * `[]` with the filter and the city without it — so the map fell back to its
+ * placeholder while "Open in Maps", which never had the filter, worked fine.
+ * That mismatch is exactly what made it look like a rendering fault.
+ *
+ * The bias still earns its keep on the first pass: the catalog really does
+ * have a venue called "Port City Arena", and unbiased that is a plausible hit
+ * in Dubai.
+ */
 const COUNTRY_CODES = "lk";
 
 export interface VenuePoint {
@@ -56,11 +70,25 @@ export async function geocodeVenue(place: VenueParts): Promise<VenuePoint | null
     place.city,
   ];
 
-  for (const query of queries) {
-    const point = await lookup(query);
-    if (point) {
-      log.debug("geocoded venue", { query, matched: point.matched });
-      return point;
+  // Two passes over that chain. The first keeps the Sri Lanka bias, so a local
+  // venue with an ambiguous name still resolves locally; the second drops it,
+  // so an event in Las Vegas can find itself at all. Order matters — running
+  // them the other way round would hand "Port City" to Dubai.
+  //
+  // Only a venue that misses every biased query pays for the second pass, and
+  // Nominatim's answer is cached for a month either way (a miss is a cached
+  // response too), so the extra calls are once per venue, not once per render.
+  for (const countryCodes of [COUNTRY_CODES, undefined]) {
+    for (const query of queries) {
+      const point = await lookup(query, countryCodes);
+      if (point) {
+        log.debug("geocoded venue", {
+          query,
+          matched: point.matched,
+          within: countryCodes ?? "anywhere",
+        });
+        return point;
+      }
     }
   }
 
@@ -75,10 +103,11 @@ export async function geocodeVenue(place: VenueParts): Promise<VenuePoint | null
   return null;
 }
 
-async function lookup(query: string): Promise<VenuePoint | null> {
-  const url =
-    `${NOMINATIM_URL}?format=jsonv2&limit=1&countrycodes=${COUNTRY_CODES}` +
-    `&q=${encodeURIComponent(query)}`;
+/** One Nominatim search. `countryCodes` omitted searches the whole planet. */
+async function lookup(query: string, countryCodes?: string): Promise<VenuePoint | null> {
+  const params = new URLSearchParams({ format: "jsonv2", limit: "1", q: query });
+  if (countryCodes) params.set("countrycodes", countryCodes);
+  const url = `${NOMINATIM_URL}?${params}`;
 
   let res: Response;
   try {
