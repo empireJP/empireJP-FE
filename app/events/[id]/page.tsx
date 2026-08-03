@@ -267,7 +267,13 @@ export default async function EventPage({
             <h2 className="text-lg font-semibold text-fg">Location</h2>
             <p className="mt-2 font-medium text-fg">{event.venue}</p>
             <p className="text-sm text-muted">{event.area}, {event.city}</p>
-            <VenueMap venue={event.venue} area={event.area} city={event.city} />
+            <VenueMap
+              venue={event.venue}
+              area={event.area}
+              city={event.city}
+              latitude={event.latitude}
+              longitude={event.longitude}
+            />
           </section>
         </div>
       </div>

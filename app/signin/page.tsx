@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Logo } from "@/components/Logo";
 import { authClient } from "@/lib/auth-client";
 import { ArrowRightIcon, GoogleIcon, MailIcon } from "@/components/Icons";
+import { email as validateEmail } from "@/lib/validation";
 
 export default function SignInPage() {
   const router = useRouter();
@@ -29,8 +30,9 @@ export default function SignInPage() {
   }
 
   async function sendOtp(withEmail: string) {
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(withEmail)) {
-      setError("Enter a valid email address.");
+    const problem = validateEmail(withEmail);
+    if (problem) {
+      setError(problem);
       return;
     }
     setError("");

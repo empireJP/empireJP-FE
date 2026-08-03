@@ -119,7 +119,6 @@ export function TicketsPanel({ event, order }: { event: EventItem; order: Order 
           <QRTicket
             key={t.code}
             event={event}
-            order={order}
             ticket={t}
             index={i}
             onDownload={() => download(compose([t]), `empire-ticket-${t.code}.png`)}
@@ -132,7 +131,7 @@ export function TicketsPanel({ event, order }: { event: EventItem; order: Order 
         {order.tickets.map((t) => (
           <QRCodeCanvas
             key={t.code}
-            value={ticketValue(order, t.code)}
+            value={ticketValue(t.code)}
             size={256}
             level="M"
             bgColor="#ffffff"

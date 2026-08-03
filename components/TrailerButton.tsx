@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { PlayIcon, XIcon } from "./Icons";
 
 /**
@@ -124,7 +125,24 @@ export function TrailerButton({
         Watch trailer
       </button>
 
-      {open && (
+      {/*
+        Portalled to <body>, and it has to be.
+
+        This button renders inside the event page's left column, which is
+        `md:sticky` — and a sticky element ALWAYS creates a stacking context,
+        z-index or not. That trapped `z-[100]` inside the column, so it only
+        ever ranked against the column's own children. The ticket card in the
+        next grid track is later in the DOM and its Get Tickets wrapper is
+        `relative`, i.e. positioned at the same level as the whole sticky
+        column — so it painted straight over the playing trailer, while its
+        own non-positioned siblings (the "Secure checkout" line) correctly
+        stayed behind. Raising the z-index would not have helped; nothing
+        inside a trapped stacking context can outrank something outside it.
+
+        At <body> the overlay ranks against the page itself, which is what
+        `z-[100]` was always meant to mean.
+      */}
+      {open && createPortal(
         <div
           role="dialog"
           aria-modal="true"
@@ -165,7 +183,8 @@ export function TrailerButton({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

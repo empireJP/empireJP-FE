@@ -7,6 +7,7 @@ import { useUser } from "@/lib/user";
 import { authClient } from "@/lib/auth-client";
 import { CheckoutShell } from "@/components/CheckoutShell";
 import { ArrowRightIcon, GoogleIcon, MailIcon } from "@/components/Icons";
+import { email as validateEmail } from "@/lib/validation";
 
 export default function SignInStep() {
   const router = useRouter();
@@ -43,8 +44,9 @@ export default function SignInStep() {
   }
 
   async function sendOtp(withEmail: string) {
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(withEmail)) {
-      setError("Enter a valid email address.");
+    const problem = validateEmail(withEmail);
+    if (problem) {
+      setError(problem);
       return;
     }
     setError("");

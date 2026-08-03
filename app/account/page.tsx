@@ -22,6 +22,7 @@ import {
   TicketIcon,
 } from "@/components/Icons";
 import { dateLong, money } from "@/lib/format";
+import { hasErrors, validateProfile } from "@/lib/validation";
 
 type Tab = "tickets" | "saved" | "following" | "settings";
 
@@ -62,6 +63,9 @@ export default function AccountPage() {
   const [tab, setTab] = useState<Tab>("tickets");
   const [form, setForm] = useState<Profile>(profile);
   const [saved, setSaved] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [validated, setValidated] = useState(false);
   const [savedEvents, setSavedEvents] = useState<EventItem[] | null>(null);
   const [orderEvents, setOrderEvents] = useState<Record<string, EventItem>>({});
 
@@ -164,8 +168,33 @@ export default function AccountPage() {
     { key: "settings", label: "Settings", icon: SettingsIcon },
   ];
 
-  function saveSettings() {
-    updateProfile(form);
+  // Derived, so a corrected field clears as the user types once they've tried
+  // to save at least once.
+  const profileErrors = validateProfile(form);
+  const shown = validated ? profileErrors : {};
+
+  async function saveSettings() {
+    if (savingProfile) return;
+    setValidated(true);
+    setProfileError(null);
+    if (hasErrors(profileErrors)) return;
+
+    setSavingProfile(true);
+    // Only the fields the API accepts. `email` is stripped by patchMeSchema,
+    // so sending it would look like a save that did nothing.
+    const message = await updateProfile({
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+      city: form.city.trim(),
+      notifyDrops: form.notifyDrops,
+      notifyReminders: form.notifyReminders,
+    });
+    setSavingProfile(false);
+
+    if (message) {
+      setProfileError(message);
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
   }
@@ -343,37 +372,74 @@ export default function AccountPage() {
             <div className="rounded-2xl border border-line bg-surface p-5">
               <h2 className="font-semibold text-fg">Profile</h2>
               <div className="mt-4 flex flex-col gap-4">
-                <Field label="Full name">
+                {/* No maxLength: it truncates a paste silently, which on a
+                    name means saving something the user never typed. The
+                    length rule lives in validateProfile, where it can speak. */}
+                <Field
+                  label="Full name"
+                  error={shown.name}
+                  errorId="profile-name-error"
+                >
                   <input
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                     className={inputCls}
                     placeholder="Your name"
+                    aria-invalid={!!shown.name}
+                    aria-describedby={
+                      shown.name ? "profile-name-error" : undefined
+                    }
                   />
                 </Field>
-                <Field label="Email">
+                {/* Read-only: email is the auth identity, and patchMeSchema
+                    strips it — an editable field here would accept edits that
+                    silently never save. */}
+                <Field
+                  label="Email"
+                  hint="Your email is how you sign in and can't be changed here."
+                >
+                  {/* readOnly, not disabled: `disabled` drops the field from
+                      the tab order, so a keyboard user could no longer reach
+                      it to read their own address. */}
                   <input
                     type="email"
                     value={form.email}
-                    onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    className={inputCls}
+                    readOnly
+                    className={`${inputCls} cursor-not-allowed opacity-60`}
                     placeholder="you@email.com"
                   />
                 </Field>
                 <div className="grid grid-cols-2 gap-4">
-                  <Field label="Mobile">
+                  <Field
+                    label="Mobile"
+                    error={shown.phone}
+                    errorId="profile-phone-error"
+                  >
                     <input
                       value={form.phone}
                       onChange={(e) => setForm({ ...form, phone: e.target.value })}
                       className={inputCls}
                       placeholder="+94 …"
+                      inputMode="tel"
+                      aria-invalid={!!shown.phone}
+                      aria-describedby={
+                        shown.phone ? "profile-phone-error" : undefined
+                      }
                     />
                   </Field>
-                  <Field label="City">
+                  <Field
+                    label="City"
+                    error={shown.city}
+                    errorId="profile-city-error"
+                  >
                     <input
                       value={form.city}
                       onChange={(e) => setForm({ ...form, city: e.target.value })}
                       className={inputCls}
+                      aria-invalid={!!shown.city}
+                      aria-describedby={
+                        shown.city ? "profile-city-error" : undefined
+                      }
                     />
                   </Field>
                 </div>
@@ -410,11 +476,20 @@ export default function AccountPage() {
               </div>
             </div>
 
+            {profileError && (
+              <p role="alert" className="mt-4 text-sm text-danger">
+                {profileError}
+              </p>
+            )}
+
             <button
-              onClick={saveSettings}
-              className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-fg transition-all hover:bg-primary-hover active:scale-[0.98]"
+              onClick={() => void saveSettings()}
+              disabled={savingProfile}
+              className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-fg transition-all hover:bg-primary-hover active:scale-[0.98] disabled:opacity-60"
             >
-              {saved ? (
+              {savingProfile ? (
+                "Saving…"
+              ) : saved ? (
                 <>
                   <CheckIcon width={16} height={16} /> Saved
                 </>
@@ -432,12 +507,42 @@ export default function AccountPage() {
 const inputCls =
   "w-full rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-sm text-fg placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+// The message sits *outside* the <label>: text inside a label becomes part of
+// the control's accessible name, so an inline error there makes the field
+// announce as "Full name Name is required." It is linked with
+// aria-describedby instead, which is what screen readers expect.
+function Field({
+  label,
+  error,
+  hint,
+  errorId,
+  children,
+}: {
+  label: string;
+  error?: string;
+  hint?: string;
+  /** Must match the input's aria-describedby. */
+  errorId?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium text-fg">{label}</span>
-      {children}
-    </label>
+    <div className="flex flex-col gap-1.5">
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-fg">{label}</span>
+        {children}
+      </label>
+      {error ? (
+        <span
+          id={errorId}
+          role="alert"
+          className="text-xs font-medium text-danger"
+        >
+          {error}
+        </span>
+      ) : hint ? (
+        <span className="text-xs text-faint">{hint}</span>
+      ) : null}
+    </div>
   );
 }
 

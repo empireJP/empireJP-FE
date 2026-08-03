@@ -6,6 +6,7 @@ import { useCheckout } from "@/lib/checkout";
 import { useUser } from "@/lib/user";
 import { CheckoutShell } from "@/components/CheckoutShell";
 import { ArrowRightIcon, CheckCircleIcon } from "@/components/Icons";
+import { hasErrors, validateBuyer } from "@/lib/validation";
 
 export default function DetailsStep() {
   const router = useRouter();
@@ -20,13 +21,28 @@ export default function DetailsStep() {
   }, [hydrated, signedIn, profile.email, buyer.email, setBuyer]);
   const [name, setName] = useState(buyer.name);
   const [phone, setPhone] = useState(buyer.phone);
-  const [error, setError] = useState("");
+  // Per field, not form-wide: blurring Mobile must not flag Name, which the
+  // buyer may not have reached yet. Submitting marks everything touched.
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const touch = (field: string) =>
+    setTouched((t) => ({ ...t, [field]: true }));
+
+  // Mirrors createOrderSchema's `buyer` block, so an over-long name or phone
+  // fails here rather than at order creation on the payment step — where the
+  // same 422 reads as a payment problem.
+  const errors = validateBuyer({ name, phone, email: buyer.email });
+  const shown = {
+    name: touched.name ? errors.name : undefined,
+    phone: touched.phone ? errors.phone : undefined,
+    // Not a field the buyer can type into, so it isn't gated on `touched` —
+    // but it must wait for hydration and for the session effect above, or it
+    // flashes on the first render of every normal visit.
+    email: hydrated && !profile.email ? errors.email : undefined,
+  };
 
   function proceed() {
-    if (name.trim().length < 2) {
-      setError("Please enter the name on the ticket.");
-      return;
-    }
+    setTouched({ name: true, phone: true });
+    if (hasErrors(errors)) return;
     setBuyer({ name: name.trim(), phone: phone.trim() });
     router.push("/checkout/payment");
   }
@@ -52,13 +68,22 @@ export default function DetailsStep() {
             <span className="text-sm font-medium text-fg">Full name</span>
             <input
               value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                setError("");
-              }}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => touch("name")}
               placeholder="Alex Morgan"
-              className="rounded-xl border border-line bg-surface px-3.5 py-3 text-sm text-fg placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent"
+              aria-invalid={!!shown.name}
+              aria-describedby={shown.name ? "buyer-name-error" : undefined}
+              className="rounded-xl border border-line bg-surface px-3.5 py-3 text-sm text-fg placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent aria-[invalid=true]:border-danger"
             />
+            {shown.name && (
+              <span
+                id="buyer-name-error"
+                role="alert"
+                className="text-xs font-medium text-danger"
+              >
+                {shown.name}
+              </span>
+            )}
           </label>
 
           <label className="flex flex-col gap-1.5">
@@ -68,17 +93,34 @@ export default function DetailsStep() {
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+              onBlur={() => touch("phone")}
               placeholder="(555) 123-4567"
               inputMode="tel"
-              className="rounded-xl border border-line bg-surface px-3.5 py-3 text-sm text-fg placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent"
+              aria-invalid={!!shown.phone}
+              aria-describedby={shown.phone ? "buyer-phone-error" : undefined}
+              className="rounded-xl border border-line bg-surface px-3.5 py-3 text-sm text-fg placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent aria-[invalid=true]:border-danger"
             />
-            <span className="text-xs text-faint">
-              For door updates if the event time changes.
-            </span>
+            {shown.phone ? (
+              <span
+                id="buyer-phone-error"
+                role="alert"
+                className="text-xs font-medium text-danger"
+              >
+                {shown.phone}
+              </span>
+            ) : (
+              <span className="text-xs text-faint">
+                For door updates if the event time changes.
+              </span>
+            )}
           </label>
         </div>
 
-        {error && <p className="mt-3 text-sm text-accent">{error}</p>}
+        {shown.email && (
+          <p role="alert" className="mt-3 text-sm font-medium text-danger">
+            {shown.email}
+          </p>
+        )}
 
         <div className="mt-6 flex items-center gap-3">
           <button

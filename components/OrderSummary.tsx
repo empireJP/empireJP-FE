@@ -5,6 +5,7 @@ import { useCheckout } from "@/lib/checkout";
 import { EventCover } from "./EventCover";
 import { CalendarIcon, CheckIcon, LockIcon, PinIcon, XIcon } from "./Icons";
 import { amount, dateShort, money, to12h } from "@/lib/format";
+import { validateCouponCode } from "@/lib/validation";
 
 export function OrderSummary() {
   const { event, lines, totals, coupon, applyCoupon, removeCoupon } = useCheckout();
@@ -22,9 +23,18 @@ export function OrderSummary() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (checking) return;
+    // validateCouponSchema is `trim().min(1).max(64)`. Checked before the
+    // request rather than after: a code that can't be valid shouldn't cost a
+    // round trip, and an untouched field used to submit an empty string and
+    // come back as a generic failure.
+    const shapeError = validateCouponCode(code);
+    if (shapeError) {
+      setError(shapeError);
+      return;
+    }
     setChecking(true);
     try {
-      const res = await applyCoupon(code);
+      const res = await applyCoupon(code.trim());
       if (res.ok) {
         setError("");
         setCode("");
@@ -124,21 +134,30 @@ export function OrderSummary() {
                 }}
                 disabled={checking}
                 placeholder="Promo code"
-                className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm uppercase text-fg placeholder:normal-case placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60"
+                aria-invalid={!!error}
+                aria-describedby={error ? "coupon-error" : undefined}
+                className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm uppercase text-fg placeholder:normal-case placeholder:text-faint focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60 aria-[invalid=true]:border-danger"
               />
               <button
                 type="submit"
-                disabled={checking}
-                className="shrink-0 rounded-lg border border-line px-3.5 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-60"
+                disabled={checking || !code.trim()}
+                className="shrink-0 rounded-lg border border-line px-3.5 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {checking ? "Checking…" : "Apply"}
               </button>
             </form>
           )}
           {/* The API's reason, whether it was rejected on apply or stopped
-              applying afterwards. */}
+              applying afterwards — or our own shape check, which never gets
+              that far. */}
           {(error || totals.couponError) && (
-            <p className="mt-1.5 text-xs text-danger">{error || totals.couponError}</p>
+            <p
+              id="coupon-error"
+              role="alert"
+              className="mt-1.5 text-xs text-danger"
+            >
+              {error || totals.couponError}
+            </p>
           )}
         </div>
       )}
