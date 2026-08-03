@@ -15,13 +15,11 @@ export function ticketValue(code: string) {
 
 export function QRTicket({
   event,
-  order,
   ticket,
   index,
   onDownload,
 }: {
   event: EventItem;
-  order: Order;
   ticket: Order["tickets"][number];
   index: number;
   onDownload?: () => void;

@@ -119,7 +119,6 @@ export function TicketsPanel({ event, order }: { event: EventItem; order: Order 
           <QRTicket
             key={t.code}
             event={event}
-            order={order}
             ticket={t}
             index={i}
             onDownload={() => download(compose([t]), `empire-ticket-${t.code}.png`)}
