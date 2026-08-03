@@ -5,7 +5,7 @@ import { EventCover } from "@/components/EventCover";
 import { ArrowRightIcon, CalendarIcon, TicketIcon, UsersIcon, WaveIcon } from "@/components/Icons";
 import { amount, dateShort, money } from "@/lib/format";
 
-export const metadata: Metadata = { title: "Dashboard — Empire Events" };
+export const metadata: Metadata = { title: "Dashboard" };
 
 function Sparkline({ data }: { data: number[] }) {
   const min = Math.min(...data);

@@ -4,7 +4,8 @@ import { StaticPage } from "@/components/StaticPage";
 import { ArrowRightIcon } from "@/components/Icons";
 
 export const metadata: Metadata = {
-  title: "About — Empire Events",
+  title: "About",
+  alternates: { canonical: "/about" },
   description: "Empire Events is the home of electronic music ticketing in Colombo.",
 };
 

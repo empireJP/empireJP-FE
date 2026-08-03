@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { Section, StaticPage } from "@/components/StaticPage";
 
 export const metadata: Metadata = {
-  title: "Terms of Service — Empire Events",
+  title: "Terms of Service",
+  alternates: { canonical: "/terms" },
   description: "The terms that apply when you buy tickets on Empire Events.",
 };
 

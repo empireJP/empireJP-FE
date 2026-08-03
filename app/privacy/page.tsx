@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { Section, StaticPage } from "@/components/StaticPage";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — Empire Events",
+  title: "Privacy Policy",
+  alternates: { canonical: "/privacy" },
   description: "What data Empire Events collects and how it's used.",
 };
 

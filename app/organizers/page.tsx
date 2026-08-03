@@ -10,7 +10,19 @@ import {
   WaveIcon,
 } from "@/components/Icons";
 
-export const metadata: Metadata = { title: "Sell tickets — Empire Events for Organizers" };
+export const metadata: Metadata = {
+  title: "Sell tickets with Empire Events",
+  description:
+    "Publish a polished event page, take payments, and manage your audience in one place. Empire Events for organizers and promoters.",
+  alternates: { canonical: "/organizers" },
+  openGraph: {
+    type: "website",
+    url: "/organizers",
+    title: "Sell tickets with Empire Events",
+    description:
+      "Publish a polished event page, take payments, and manage your audience in one place.",
+  },
+};
 
 const FEATURES = [
   { icon: TicketIcon, title: "Beautiful event pages", body: "Publish a polished, on-brand page in minutes. Multiple ticket tiers, capacity limits, and access codes built in." },

@@ -8,7 +8,8 @@ import {
 } from "@/components/Icons";
 
 export const metadata: Metadata = {
-  title: "Contact — Empire Events",
+  title: "Contact",
+  alternates: { canonical: "/contact" },
   description: "Reach the Empire Events team — we reply within 24 hours.",
 };
 

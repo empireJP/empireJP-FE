@@ -17,6 +17,9 @@ import {
   TicketIcon,
 } from "@/components/Icons";
 import { calendarParts, dateLong, money, to12h } from "@/lib/format";
+import { JsonLd } from "@/components/JsonLd";
+import { SITE_NAME, absoluteUrl } from "@/lib/site";
+import { breadcrumbJsonLd, eventJsonLd } from "@/lib/structured-data";
 
 export async function generateMetadata({
   params,
@@ -25,8 +28,41 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const e = await getEvent(id);
-  if (!e) return { title: "Event not found — Empire Events" };
-  return { title: `${e.title} · ${e.venue} — Empire Events`, description: e.tagline };
+  // A missing event renders notFound() below; tell crawlers not to keep the
+  // URL rather than letting a soft-404 title get indexed.
+  if (!e) return { title: "Event not found", robots: { index: false, follow: false } };
+
+  const title = `${e.title} · ${e.venue}`;
+  // Prefer the first real paragraph over the tagline: taglines are short and
+  // often duplicated across an organizer's events, which is exactly what gets
+  // a description rewritten by Google or flagged as thin.
+  const description =
+    e.description.find((p) => p.trim().length > 0)?.slice(0, 300) ||
+    e.tagline ||
+    `${e.title} at ${e.venue}, ${e.city}. Tickets on ${SITE_NAME}.`;
+  const image = absoluteUrl(e.image);
+  const url = `/events/${e.slug}`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      // `article` rather than `website`: it is a single dated thing, and the
+      // published/expiry hints below only apply to that type.
+      type: "article",
+      url,
+      title: `${title} — ${SITE_NAME}`,
+      description,
+      ...(image ? { images: [{ url: image, alt: e.title }] } : {}),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${title} — ${SITE_NAME}`,
+      description,
+      ...(image ? { images: [image] } : {}),
+    },
+  };
 }
 
 export default async function EventPage({
@@ -45,6 +81,18 @@ export default async function EventPage({
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      {/* Event is the node that earns the date/venue/price row in results;
+          the breadcrumb replaces the raw URL shown above it. */}
+      <JsonLd
+        data={[
+          eventJsonLd(event),
+          breadcrumbJsonLd([
+            { name: "Home", path: "/" },
+            { name: "Events", path: "/events" },
+            { name: event.title, path: `/events/${event.slug}` },
+          ]),
+        ]}
+      />
       <Link
         href="/"
         className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-fg"

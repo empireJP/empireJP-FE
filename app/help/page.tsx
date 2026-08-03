@@ -4,7 +4,8 @@ import { StaticPage } from "@/components/StaticPage";
 import { ArrowRightIcon, ChevronRightIcon } from "@/components/Icons";
 
 export const metadata: Metadata = {
-  title: "Help Center — Empire Events",
+  title: "Help Center",
+  alternates: { canonical: "/help" },
   description: "Quick answers to the most common Empire Events questions.",
 };
 

@@ -15,6 +15,7 @@ import {
   SpotifyIcon,
 } from "@/components/Icons";
 import { dateShort } from "@/lib/format";
+import { SITE_NAME, absoluteUrl } from "@/lib/site";
 
 export function generateStaticParams() {
   return ARTISTS.map((a) => ({ slug: a.slug }));
@@ -27,8 +28,30 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const a = getArtist(slug);
-  if (!a) return { title: "Artist not found — Empire Events" };
-  return { title: `${a.name} — Empire Events`, description: a.bio };
+  if (!a) return { title: "Artist not found", robots: { index: false, follow: false } };
+
+  const description = a.bio?.slice(0, 300) || `${a.name} — ${a.role}, ${a.city}.`;
+  const image = absoluteUrl(a.photo);
+  const url = `/artists/${a.slug}`;
+
+  return {
+    title: a.name,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      type: "profile",
+      url,
+      title: `${a.name} — ${SITE_NAME}`,
+      description,
+      ...(image ? { images: [{ url: image, alt: a.name }] } : {}),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${a.name} — ${SITE_NAME}`,
+      description,
+      ...(image ? { images: [image] } : {}),
+    },
+  };
 }
 
 export default async function ArtistPage({

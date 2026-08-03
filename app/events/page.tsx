@@ -5,8 +5,17 @@ import type { Category } from "@/lib/types";
 import { ExploreClient } from "@/components/ExploreClient";
 
 export const metadata: Metadata = {
-  title: "All Events — Empire Events",
-  description: "Every upcoming electronic night, festival and club show across Colombo.",
+  title: "Explore events",
+  description:
+    "Every upcoming club night, festival and live show on Empire Events — browse by city, category or date, and book in seconds.",
+  alternates: { canonical: "/events" },
+  openGraph: {
+    type: "website",
+    url: "/events",
+    title: "Explore events — Empire Events",
+    description:
+      "Every upcoming club night, festival and live show on Empire Events.",
+  },
 };
 
 export default async function EventsPage({
