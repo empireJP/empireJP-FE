@@ -8,6 +8,11 @@ import { CheckoutShell } from "@/components/CheckoutShell";
 import { QtyStepper } from "@/components/QtyStepper";
 import { ArrowRightIcon } from "@/components/Icons";
 import { money } from "@/lib/format";
+import { LIMITS, cartLinesError } from "@/lib/validation";
+
+/** How many of one tier a single order may hold. A merchandising choice, well
+ *  inside the API's per-line maximum. */
+const PER_ORDER_TIER_LIMIT = 8;
 
 export default function TicketsStep() {
   const router = useRouter();
@@ -20,6 +25,16 @@ export default function TicketsStep() {
       router.replace("/checkout/signin");
     }
   }, [hydrated, signedIn, router]);
+
+  // cartLinesSchema caps an order at 10 distinct tiers. Only reachable on an
+  // event with 11+ types, but the failure would otherwise land at order
+  // creation rather than here where the selection can be changed.
+  // Counted the same way lib/checkout.tsx derives totals — off the event's own
+  // tiers, not raw `lines` keys. Counting stale keys could block Continue over
+  // ticket types the stepper doesn't even render.
+  const distinctTiers =
+    event?.tiers.filter((t) => (lines[t.id] ?? 0) > 0).length ?? 0;
+  const linesProblem = cartLinesError(distinctTiers);
 
   // A cart survives in sessionStorage, so it can outlive the sale it was
   // started from. Without this the buyer walks three more steps and is
@@ -36,16 +51,24 @@ export default function TicketsStep() {
       subtitle={event ? `${event.title} · ${event.venue}` : undefined}
       action={
         <div className="flex items-center justify-between gap-4">
-          <p className={`text-sm ${closed ? "text-warning" : "text-muted"}`}>
+          {/* A closed sale outranks everything else — nothing in this cart can
+              proceed — so it takes the line before the tier-count problem. */}
+          <p
+            className={`text-sm ${
+              closed ? "text-warning" : linesProblem ? "text-danger" : "text-muted"
+            }`}
+          >
             {closed
               ? closedReason
-              : totals.count === 0
-                ? "Add at least one ticket to continue."
-                : `${totals.count} ticket${totals.count > 1 ? "s" : ""} · ${money(totals.total, event?.currency)} total`}
+              : linesProblem
+                ? linesProblem
+                : totals.count === 0
+                  ? "Add at least one ticket to continue."
+                  : `${totals.count} ticket${totals.count > 1 ? "s" : ""} · ${money(totals.total, event?.currency)} total`}
           </p>
           <button
             onClick={() => router.push("/checkout/details")}
-            disabled={totals.count === 0 || closed}
+            disabled={totals.count === 0 || closed || !!linesProblem}
             className="flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-fg transition-all hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Continue
@@ -58,7 +81,9 @@ export default function TicketsStep() {
         <div className="divide-y divide-line">
           {event?.tiers.map((t) => {
             const qty = lines[t.id] ?? 0;
-            const max = Math.min(t.available, 8);
+            // 8 is the product rule and is stricter than the API's per-line
+            // cap; take whichever binds first so the two can't drift apart.
+            const max = Math.min(t.available, PER_ORDER_TIER_LIMIT, LIMITS.cart.maxQtyPerLine);
             return (
               <div
                 key={t.id}

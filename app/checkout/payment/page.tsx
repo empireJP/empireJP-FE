@@ -32,6 +32,7 @@ import { confirmMockOrder, getPaymentMethods } from "@/lib/api";
 import { startPayHerePayment } from "@/lib/payhere";
 import { startRedirectPayment } from "@/lib/gateway-redirect";
 import { createLogger } from "@/lib/logger";
+import { buyerIsComplete } from "@/lib/validation";
 import type { PaymentMethod, PaymentProviderId } from "@/lib/types";
 
 const log = createLogger("checkout.payment");
@@ -44,7 +45,8 @@ const FREE_ORDER_VIA: PaymentProviderId = "mock";
 
 export default function PaymentStep() {
   const router = useRouter();
-  const { event, totals, buyer, placeOrder, awaitPaidOrder } = useCheckout();
+  const { hydrated, event, totals, buyer, placeOrder, awaitPaidOrder } =
+    useCheckout();
 
   const [methods, setMethods] = useState<PaymentMethod[] | null>(null);
   const [selected, setSelected] = useState<PaymentProviderId | null>(null);
@@ -55,6 +57,23 @@ export default function PaymentStep() {
   const busy = status !== "idle";
   // Everything on this page is denominated in the event's currency.
   const currency = event?.currency;
+
+  // The details step is the only thing that populates `buyer`, and reaching
+  // this page is otherwise pure forward navigation — back/forward, a restored
+  // tab or a bookmark lands here with an empty name and a live Pay button.
+  // createOrderSchema requires `buyer.name`, so that 422 would surface at the
+  // worst possible moment. Send them back to fill it in instead.
+  // `hydrated` is essential, not defensive: the store starts empty and reads
+  // sessionStorage in a mount effect. Passive effects run child-first, so this
+  // effect fires before the provider has restored anything — without the
+  // guard every hard load of this route would bounce to the details step.
+  const incompleteBuyer = !buyerIsComplete(buyer);
+  useEffect(() => {
+    if (hydrated && incompleteBuyer && !busy) {
+      log.warn("payment step reached without buyer details — redirecting");
+      router.replace("/checkout/details");
+    }
+  }, [hydrated, incompleteBuyer, busy, router]);
 
   // Which gateways this server can run FOR THIS EVENT'S CURRENCY — a JPY
   // event offers KOMOJU, a USD one PayHere. An empty list is a legitimate
