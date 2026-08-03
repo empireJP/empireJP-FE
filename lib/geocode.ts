@@ -1,5 +1,16 @@
-// The catalog carries no coordinates — only "venue / area / city" strings — so
-// the event page's location map resolves that text to a point here, server-side.
+// Last-resort location lookup for events that have no coordinates of their own.
+//
+// This is the fallback, not the main path. An event created through the
+// Admin-FE location picker carries the exact point the organizer chose, and
+// `VenueMap` plots that directly — see `resolveVenueLocation`. Only the older
+// catalog, seeded before the picker existed, reaches this module, where all we
+// have is "venue / area / city" as free text.
+//
+// That distinction is the whole point of `precision`. Text lookup answers a
+// different question than the picker does: it can tell us the venue, or it can
+// tell us only which city the venue is in, and those two answers must not be
+// drawn on a map the same way. A pin dropped at a city centroid at street zoom
+// claims a precision nobody has, and sends someone to the wrong side of town.
 //
 // Nominatim needs no key but asks for at most one request a second and a
 // User-Agent that identifies the caller. Both shape this module: the response is
@@ -18,13 +29,35 @@ const REVALIDATE_SECONDS = 60 * 60 * 24 * 30;
 /** Nominatim rejects requests without one and asks that it name the app. */
 const USER_AGENT = "empireJP-FE (+https://github.com/empireJP)";
 
-/** `City` is Colombo-only, so every venue is Sri Lankan. Bias the search rather
- *  than pasting the country into the query — it keeps "Port City" off Dubai. */
+/**
+ * Sri Lanka — a first-pass bias, not a filter on every lookup.
+ *
+ * It was a filter, on the premise that "`City` is Colombo-only, so every venue
+ * is Sri Lankan". The API never guaranteed that — `city` is free text there
+ * (`z.string().min(1).max(120)`) — and once the catalog went international the
+ * filter made every foreign event permanently unmappable: `q=Las Vegas` with
+ * `countrycodes=lk` returns `[]`, and the city without it.
+ *
+ * The bias still earns its keep on the first pass. The catalog has a venue
+ * called "Port City Arena", and bare "Port City" unbiased resolves to
+ * Fremantle, Western Australia.
+ */
 const COUNTRY_CODES = "lk";
+
+/**
+ * How much of the address we actually managed to match — and therefore how
+ * much the map is entitled to claim.
+ *
+ * `venue` is a real hit on the place itself. `area` and `city` mean the venue
+ * was not found and we fell back to something containing it, so the point is a
+ * centroid, not a doorstep.
+ */
+export type VenuePrecision = "venue" | "area" | "city";
 
 export interface VenuePoint {
   lat: number;
   lon: number;
+  precision: VenuePrecision;
   /** What Nominatim actually matched. Logged, never shown — the UI already has
    *  the venue name, and this is often a whole postal address. */
   matched: string;
@@ -48,25 +81,43 @@ export interface VenueParts {
  * a district OSM knows, and the odd one exists nowhere at all.
  */
 export async function geocodeVenue(place: VenueParts): Promise<VenuePoint | null> {
-  // Most specific first, then widen. Landing on the district is still a useful
-  // map; landing on the city is at least honest about the neighbourhood.
-  const queries = [
-    `${place.venue}, ${place.area}, ${place.city}`,
-    `${place.area}, ${place.city}`,
-    place.city,
+  // Most specific first, then widen. Each step carries what a hit on it would
+  // actually prove, so the caller can draw a district differently from a
+  // doorstep instead of pretending both are the venue.
+  const queries: { query: string; precision: VenuePrecision }[] = [
+    { query: `${place.venue}, ${place.area}, ${place.city}`, precision: "venue" },
+    { query: `${place.area}, ${place.city}`, precision: "area" },
+    { query: place.city, precision: "city" },
   ];
 
-  for (const query of queries) {
-    const point = await lookup(query);
-    if (point) {
-      log.debug("geocoded venue", { query, matched: point.matched });
-      return point;
+  // Two passes over that chain. The first keeps the Sri Lanka bias, so a local
+  // venue with an ambiguous name still resolves locally; the second drops it,
+  // so an event in Las Vegas can find itself at all. The order is load-bearing
+  // — reversed, "Port City" goes to Australia.
+  //
+  // Only a venue that misses every biased query pays for the second pass, and
+  // Nominatim's answer is cached for a month either way (a miss is a cached
+  // response too), so the extra calls are once per venue, not once per render.
+  for (const countryCodes of [COUNTRY_CODES, undefined]) {
+    for (const { query, precision } of queries) {
+      const point = await lookup(query, precision, countryCodes);
+      if (point) {
+        log.debug("geocoded venue", {
+          query,
+          precision,
+          matched: point.matched,
+          within: countryCodes ?? "anywhere",
+        });
+        return point;
+      }
     }
   }
 
-  // Not an error — the map falls back to its placeholder and "Open in Maps"
-  // still works — but the fallback is indistinguishable from a real map at a
-  // glance, so the reason has to be written down somewhere.
+  // Not an error: the panel says "we couldn't place this venue" and "Open in
+  // Maps" still works. Logged anyway, because the buyer's version of this is
+  // one sentence and this is the only place the cause survives — and because a
+  // rash of these means the event form is letting organizers past the location
+  // picker with nothing but typed text.
   log.warn("no coordinates for venue, map falls back to placeholder", {
     venue: place.venue,
     area: place.area,
@@ -75,10 +126,15 @@ export async function geocodeVenue(place: VenueParts): Promise<VenuePoint | null
   return null;
 }
 
-async function lookup(query: string): Promise<VenuePoint | null> {
-  const url =
-    `${NOMINATIM_URL}?format=jsonv2&limit=1&countrycodes=${COUNTRY_CODES}` +
-    `&q=${encodeURIComponent(query)}`;
+/** One Nominatim search. `countryCodes` omitted searches the whole planet. */
+async function lookup(
+  query: string,
+  precision: VenuePrecision,
+  countryCodes?: string,
+): Promise<VenuePoint | null> {
+  const params = new URLSearchParams({ format: "jsonv2", limit: "1", q: query });
+  if (countryCodes) params.set("countrycodes", countryCodes);
+  const url = `${NOMINATIM_URL}?${params}`;
 
   let res: Response;
   try {
@@ -108,5 +164,5 @@ async function lookup(query: string): Promise<VenuePoint | null> {
   // in the chain — nothing to log at this level.
   if (!hit || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
-  return { lat, lon, matched: hit.display_name ?? query };
+  return { lat, lon, precision, matched: hit.display_name ?? query };
 }

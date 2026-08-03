@@ -6,7 +6,14 @@ export type Category =
   | "Trance"
   | "Nightlife";
 
-export type City = "Colombo";
+/**
+ * Any city the API gives us, not a closed set. This was `"Colombo"`, which the
+ * API never guaranteed — `city` is `z.string().min(1).max(120)` there — and a
+ * literal type on a field the server fills is a claim TypeScript can't check at
+ * runtime. It read as a constraint and got used as one: the venue map pinned
+ * its lookups to Sri Lanka on the strength of it.
+ */
+export type City = string;
 
 export interface Performer {
   name: string;
@@ -35,6 +42,18 @@ export interface EventItem {
   city: City;
   area: string;
   venue: string;
+  /**
+   * The exact point the organizer chose in the dashboard's location picker,
+   * and the full address that came with it.
+   *
+   * Null on events seeded before the picker existed — never substitute a
+   * default. `0, 0` is in the Atlantic, and a map is one of the few places
+   * where a confidently wrong answer is worse than no answer. The venue map
+   * falls back to looking the address up as text, and says that it did.
+   */
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
   date: string; // ISO start
   startTime: string; // "19:00"
   endTime: string; // "23:00"
