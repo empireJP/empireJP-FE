@@ -4,7 +4,8 @@ import { ArtistCard } from "@/components/ArtistCard";
 import { BellIcon } from "@/components/Icons";
 
 export const metadata: Metadata = {
-  title: "Artists — Empire Events",
+  title: "Artists",
+  alternates: { canonical: "/artists" },
   description: "Follow your favourite DJs and get their new shows first.",
 };
 

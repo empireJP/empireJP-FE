@@ -1,5 +1,12 @@
+import type { Metadata } from "next";
 import { DashboardTabs, NewEventButton } from "@/components/DashboardTabs";
 import { Avatar } from "@/components/Avatar";
+
+/** Organizer-facing and signed-in — keep it out of the index. Inherited by
+ *  every page under /dashboard; the pages only set their own title. */
+export const metadata: Metadata = {
+  robots: { index: false, follow: false, nocache: true },
+};
 
 export default function DashboardLayout({
   children,

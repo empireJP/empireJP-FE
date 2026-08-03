@@ -108,6 +108,16 @@ export interface EventsQuery {
 
 export async function getEvents(
   params: EventsQuery = {},
+  /**
+   * Seconds to cache this read for. Omitted keeps the default `no-store`,
+   * which is what every user-facing call wants — ticket availability going
+   * stale is the one thing this catalog can't afford.
+   *
+   * Only the sitemap passes it: that response is a list of URLs, where being
+   * an hour behind is harmless and re-fetching the whole catalog on every
+   * crawler hit is not.
+   */
+  revalidate?: number,
 ): Promise<{ events: EventItem[]; meta: PageMeta }> {
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -116,6 +126,11 @@ export async function getEvents(
   const query = qs.toString();
   const { data, meta } = await apiFetch<EventItem[]>(
     `/events${query ? `?${query}` : ""}`,
+    // `cache` and `next.revalidate` are mutually exclusive — passing both is a
+    // build error — so this replaces the default rather than adding to it.
+    revalidate === undefined
+      ? undefined
+      : { cache: undefined, next: { revalidate } },
   );
   return { events: data, meta: meta! };
 }

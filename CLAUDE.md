@@ -11,6 +11,25 @@ app's origin is listed in the BE's `FRONTEND_ORIGINS`. A CORS rejection reaches
 JS as an ordinary "Failed to fetch", and server components are unaffected, so it
 looks like an empty page rather than an error.
 
+## SEO: this app is a public catalog, treat metadata as part of the page
+
+Full detail in `docs/SEO.md`. The rules that bite:
+
+- **Absolute URLs come from `lib/site.ts`.** Canonicals, Open Graph and JSON-LD
+  all need them, and a canonical pointing at the wrong host is worse than none
+  — it asks Google to drop the real page. Never hardcode an origin.
+- **Don't put the brand in a page title.** The root layout applies a
+  `%s — Empire Events` template; a page that repeats it double-suffixes.
+- **Every new public route needs a canonical**, and belongs in `app/sitemap.ts`.
+  Every new private//funnel route needs `noindex` (a layout, if the page is a
+  client component) *and* a `robots.ts` disallow — they do different jobs.
+- **Structured data must describe what the page renders**, and must emit
+  nothing rather than something wrong. `EventItem.date` is a *naive* wall-clock
+  ISO string with no offset — never `new Date()` it or append `Z`, and remember
+  `endTime <= startTime` means the show crosses midnight.
+- **Run `npx next build` for SEO changes.** `robots.ts` and `sitemap.ts` only
+  execute there; typecheck won't tell you the sitemap came out empty.
+
 ## Validation is part of the form, not something the API does for you
 
 **Every input that reaches the API gets a client-side check first, in
