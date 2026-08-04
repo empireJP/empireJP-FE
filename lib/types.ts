@@ -86,6 +86,16 @@ export interface EventItem {
    *  business can close sales early (advance-only) or late (a grace window),
    *  so an event can be sales-closed while still running. */
   salesClosed?: true;
+  /** Reachable only by share link — absent from every catalog listing. Drives
+   *  the `noindex` on its page: the URL is a secret a crawler could spend. */
+  private?: true;
+  /** How to join. Absent means TICKETED, which is every public event. Sent by
+   *  the API rather than inferred from `tiers: []`, because an event whose
+   *  tiers were all removed looks identical from here. */
+  registrationMode?: "RSVP";
+  /** Registration has closed on an RSVP event — the `salesClosed` cutoff, read
+   *  with the right noun for a flow that takes no money. */
+  rsvpClosed?: true;
   featured?: boolean;
 }
 

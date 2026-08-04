@@ -141,6 +141,53 @@ export async function getEvent(slug: string): Promise<EventItem | undefined> {
   }
 }
 
+/**
+ * A private event, addressed by its share token.
+ *
+ * Separate from `getEvent` because a private event genuinely has no slug URL —
+ * the API 404s `/events/<slug>` for one on purpose, so that guessing a slug
+ * derived from the title doesn't walk around the token.
+ */
+export async function getEventByToken(
+  token: string,
+): Promise<EventItem | undefined> {
+  try {
+    const { data } = await apiFetch<EventItem>(
+      `/e/${encodeURIComponent(token)}`,
+    );
+    return data;
+  } catch (err) {
+    // 422 is a malformed token, which for our purposes is the same answer as
+    // "no such event" — the page renders notFound() either way.
+    if (err instanceof ApiError && (err.status === 404 || err.status === 422)) {
+      return undefined;
+    }
+    throw err;
+  }
+}
+
+export interface RsvpInput {
+  name: string;
+  email: string;
+}
+
+/** Registers for an RSVP event. Lands PENDING; the organizer decides. */
+export async function registerForEvent(
+  token: string,
+  input: RsvpInput,
+): Promise<{ status: string }> {
+  const { data } = await apiFetch<{ status: string }>(
+    `/e/${encodeURIComponent(token)}/rsvp`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(input),
+    },
+  );
+  return data;
+}
+
 // --- Checkout ---------------------------------------------------------------
 
 /**
