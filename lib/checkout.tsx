@@ -10,7 +10,14 @@ import {
   useState,
 } from "react";
 import type { CartLine, CreatedOrder, EventItem, Order, PaymentProviderId } from "./types";
-import { ApiError, createOrder, getEvent, getOrder, validateCoupon } from "./api";
+import {
+  ApiError,
+  createOrder,
+  getEvent,
+  getEventByToken,
+  getOrder,
+  validateCoupon,
+} from "./api";
 import { createLogger } from "./logger";
 
 const log = createLogger("checkout");
@@ -25,6 +32,12 @@ interface Buyer {
 
 interface Persisted {
   eventSlug: string | null;
+  /** Share token for a private event, null for a public one.
+   *
+   *  Persisted alongside the slug because checkout re-resolves the event on
+   *  every step, and the API refuses a private event by slug — without this
+   *  the first step after Get Tickets would 404 and render an empty cart. */
+  shareToken: string | null;
   lines: Record<string, number>;
   buyer: Buyer;
   coupon: string | null;
@@ -50,7 +63,11 @@ interface CheckoutValue extends Persisted {
   event: EventItem | null;
   eventLoading: boolean;
   totals: Totals;
-  startCheckout: (slug: string, initial?: Record<string, number>) => void;
+  startCheckout: (
+    slug: string,
+    shareToken?: string,
+    initial?: Record<string, number>,
+  ) => void;
   setQty: (tierId: string, qty: number) => void;
   setBuyer: (patch: Partial<Buyer>) => void;
   /** Validates against the API and applies on success. The error is the API's
@@ -115,6 +132,7 @@ function cartLines(event: EventItem | null, lines: Record<string, number>): Cart
 
 const empty: Persisted = {
   eventSlug: null,
+  shareToken: null,
   lines: {},
   buyer: { email: "", name: "", phone: "" },
   coupon: null,
@@ -167,6 +185,7 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const slug = state.eventSlug;
+    const token = state.shareToken;
     if (!slug) {
       setEvent(null);
       setEventLoading(false);
@@ -174,7 +193,8 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     }
     let stale = false;
     setEventLoading(true);
-    getEvent(slug)
+    // A private event is only addressable by token — its slug 404s by design.
+    (token ? getEventByToken(token) : getEvent(slug))
       .then((e) => {
         // Nothing is logged for a stale result: the user has already moved to
         // another event, and reporting the abandoned one reads as a failure
@@ -184,7 +204,16 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
         // A null event renders the checkout's "Your cart is empty" state,
         // which reads like the user did nothing wrong — say what actually
         // happened, because the UI cannot.
-        if (!e) log.warn("event not found for checkout", { slug });
+        // `via` matters now that resolution can go two ways: a miss by token
+        // usually means the organizer rotated the link mid-checkout, which is
+        // a different story from a slug that stopped resolving. The token
+        // itself is never logged.
+        if (!e) {
+          log.warn("event not found for checkout", {
+            slug,
+            via: token ? "token" : "slug",
+          });
+        }
       })
       .catch((err) => {
         if (stale) return;
@@ -200,7 +229,7 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     return () => {
       stale = true;
     };
-  }, [state.eventSlug]);
+  }, [state.eventSlug, state.shareToken]);
 
   const totals = useMemo<Totals>(() => {
     let count = 0;
@@ -231,8 +260,8 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
   }, [event, state.lines, state.coupon, coupon]);
 
   const startCheckout = useCallback(
-    (slug: string, initial: Record<string, number> = {}) => {
-      setState({ ...empty, eventSlug: slug, lines: initial });
+    (slug: string, shareToken?: string, initial: Record<string, number> = {}) => {
+      setState({ ...empty, eventSlug: slug, shareToken: shareToken ?? null, lines: initial });
     },
     []
   );
@@ -388,6 +417,9 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
           KEY,
           JSON.stringify({
             eventSlug: state.eventSlug,
+            // Without this the buyer returns from a hosted gateway to a
+            // checkout that can no longer resolve their private event.
+            shareToken: state.shareToken,
             lines: state.lines,
             buyer: state.buyer,
             coupon: state.coupon,
@@ -404,7 +436,15 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     // `state.eventSlug` for the pre-redirect persist above; `coupon.error` so
     // a code that has stopped applying is dropped from the order rather than
     // failing it.
-    [event, state.eventSlug, state.lines, state.buyer, state.coupon, coupon.error],
+    [
+      event,
+      state.eventSlug,
+      state.shareToken,
+      state.lines,
+      state.buyer,
+      state.coupon,
+      coupon.error,
+    ],
   );
 
   // Both take the order explicitly rather than reading it out of state. The

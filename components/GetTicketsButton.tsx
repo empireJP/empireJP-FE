@@ -33,12 +33,17 @@ function unavailable(
 
 export function GetTicketsButton({
   slug,
+  shareToken,
   soldOut,
   ended,
   salesClosed,
   className = "",
 }: {
   slug: string;
+  /** Present only for a private event. Carried into checkout because the API
+   *  refuses to serve a private event by slug — without it every step after
+   *  this button re-fetches and gets a 404. */
+  shareToken?: string;
   soldOut?: boolean;
   ended?: boolean;
   salesClosed?: boolean;
@@ -54,7 +59,7 @@ export function GetTicketsButton({
     // Start the checkout either way — it survives the sign-in round trip in
     // sessionStorage, so the sign-in gate can show the order summary and
     // continue into ticket selection.
-    startCheckout(slug);
+    startCheckout(slug, shareToken);
     router.push(signedIn ? "/checkout/tickets" : "/checkout/signin");
   }
 
