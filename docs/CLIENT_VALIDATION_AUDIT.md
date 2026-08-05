@@ -233,3 +233,22 @@ Prices are never client-sent — the cart carries tier ids and quantities only.
 
 **`POST /api/v1/coupons/validate`** — `code: trim().min(1).max(64)`,
 `eventSlug: min(1)`, same `lines` contract as order creation.
+
+**`POST /api/v1/e/:token/rsvp`** — registration for a private RSVP event
+(empireJP-BE#44).
+
+| Field | Rule |
+|---|---|
+| `name` | `trim().min(1).max(120)` |
+| `email` | valid email, lowercased and trimmed server-side |
+
+Mirrored by `rsvpNameError` / `rsvpEmailError`, checked before the POST. The
+name rule is the one that earns its keep: HTML `required` accepts a string of
+spaces, which the API trims to `""` and rejects — so without the mirror a
+whitespace-only name returns a 422 that renders in the generic banner with
+nothing pointing at the field.
+
+Domain errors surfaced with their own copy rather than the generic line:
+`ALREADY_REGISTERED` (409), `RSVP_CLOSED` (409), and a plain 404, which almost
+always means the organizer rotated the link — "try again" would be advice that
+can never work, so it says the link is no longer valid instead.

@@ -18,6 +18,10 @@ export const LIMITS = {
   buyer: { name: 120, email: 254, phone: 32 },
   coupon: { code: 64 },
   cart: { maxLines: 10, maxQtyPerLine: 20 },
+  /** RSVP registration on a private event — mirrors `registerRsvpSchema`
+   *  (empireJP-BE `events.registrations.schemas.ts`): name trimmed 1–120, a
+   *  valid email that the API lowercases. */
+  rsvp: { name: 120 },
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -169,4 +173,20 @@ export function cartLinesError(distinctTiers: number): string | null {
   return distinctTiers > LIMITS.cart.maxLines
     ? `An order can include at most ${LIMITS.cart.maxLines} different ticket types. Please split it into separate orders.`
     : null;
+}
+
+/**
+ * RSVP registration on a private event — mirrors `registerRsvpSchema`.
+ *
+ * The name check earns its keep rather than leaning on HTML `required`: that
+ * accepts a string of spaces, which the API then trims to `""` and rejects, so
+ * without this a whitespace-only name comes back as a 422 in the generic
+ * error banner with nothing pointing at the field.
+ */
+export function rsvpNameError(value: string): string | null {
+  return requiredText(value, "Name", LIMITS.rsvp.name);
+}
+
+export function rsvpEmailError(value: string): string | null {
+  return email(value);
 }

@@ -5,6 +5,18 @@ import { SaveButton } from "./SaveButton";
 import { CalendarIcon, PinIcon } from "./Icons";
 import { dateShort, money, to12h } from "@/lib/format";
 
+/**
+ * Where an event card points.
+ *
+ * A private event is only addressable by its share token — `/events/<slug>`
+ * 404s for one by design. `shareToken` reaches the FE on exactly one payload
+ * (`GET /me/saved-events`), so in practice this is the Saved tab; everywhere
+ * else the token is absent and the slug is correct.
+ */
+export function eventHref(e: EventItem): string {
+  return e.shareToken ? `/e/${e.shareToken}` : `/events/${e.slug}`;
+}
+
 export function fromPrice(e: EventItem) {
   const live = e.tiers.filter((t) => !t.soldOut);
   if (live.length === 0) return null;
@@ -30,7 +42,10 @@ export function EventCard({ event }: { event: EventItem }) {
 
   return (
     <Link
-      href={`/events/${event.slug}`}
+      // A private event has no slug URL — the API 404s one on purpose. The
+      // only card that can carry a token is a saved one, and only for a user
+      // who already held the link.
+      href={eventHref(event)}
       className="group flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-card)] transition-all duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-[var(--shadow-pop)]"
     >
       <div className="relative aspect-[4/5]">

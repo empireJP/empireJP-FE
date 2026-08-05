@@ -1,8 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, registerForEvent } from "@/lib/api";
+import { createLogger } from "@/lib/logger";
+import { rsvpNameError, rsvpEmailError } from "@/lib/validation";
 import { CheckCircleIcon, TicketIcon } from "./Icons";
+
+const log = createLogger("rsvp");
 
 /**
  * The register form that stands in for the ticket panel on an RSVP event.
@@ -20,10 +24,26 @@ export function RsvpPanel({ token, closed }: { token: string; closed: boolean })
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
+  const doneRef = useRef<HTMLDivElement>(null);
+
+  // Submitting replaces the form outright; without this the focus ring is left
+  // on a button that no longer exists and nothing is announced.
+  useEffect(() => {
+    if (state === "done") doneRef.current?.focus();
+  }, [state]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (state === "sending") return;
+
+    // Mirrors the API's own rules so a whitespace name or a malformed address
+    // lands on the field instead of coming back as a 422 in the banner.
+    const problem = rsvpNameError(name) ?? rsvpEmailError(email);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+
     setError(null);
     setState("sending");
     try {
@@ -31,13 +51,24 @@ export function RsvpPanel({ token, closed }: { token: string; closed: boolean })
       setState("done");
     } catch (err) {
       setState("idle");
-      // The two the API actually raises here are worth naming; anything else
-      // gets the generic line rather than a raw server message.
       if (err instanceof ApiError && err.code === "ALREADY_REGISTERED") {
         setError("That email is already registered for this event.");
       } else if (err instanceof ApiError && err.code === "RSVP_CLOSED") {
         setError("Registration for this event has closed.");
+      } else if (err instanceof ApiError && err.status === 404) {
+        // Almost always a rotated link. Its own copy, because "try again"
+        // would be advice that can never work.
+        setError(
+          "This invitation link is no longer valid. Ask whoever shared it for a new one.",
+        );
       } else {
+        // Everything else — a 500, a dropped connection — reads the same to the
+        // user, but the cause must not vanish: this is the branch that leaves
+        // nothing to debug from if it isn't logged.
+        log.error("rsvp registration failed", {
+          cause: err instanceof Error ? err.message : String(err),
+          ...(err instanceof ApiError ? { status: err.status, code: err.code } : {}),
+        });
         setError("Something went wrong. Please try again.");
       }
     }
@@ -45,7 +76,15 @@ export function RsvpPanel({ token, closed }: { token: string; closed: boolean })
 
   if (state === "done") {
     return (
-      <div className="mt-7 rounded-2xl border border-line bg-surface p-6 text-center shadow-[var(--shadow-card)]">
+      // The form is gone, so a screen reader would otherwise be told nothing at
+      // all. `tabIndex={-1}` + the focus effect move the reading position here;
+      // `role="status"` announces it for anyone whose focus didn't move.
+      <div
+        ref={doneRef}
+        tabIndex={-1}
+        role="status"
+        className="mt-7 rounded-2xl border border-line bg-surface p-6 text-center shadow-[var(--shadow-card)] focus:outline-none"
+      >
         <span className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-accent-soft text-accent">
           <CheckCircleIcon width={22} height={22} />
         </span>
@@ -98,7 +137,11 @@ export function RsvpPanel({ token, closed }: { token: string; closed: boolean })
             />
           </label>
 
-          {error && <p className="text-sm text-danger">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-danger">
+              {error}
+            </p>
+          )}
 
           <button
             type="submit"

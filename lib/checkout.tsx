@@ -204,7 +204,16 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
         // A null event renders the checkout's "Your cart is empty" state,
         // which reads like the user did nothing wrong — say what actually
         // happened, because the UI cannot.
-        if (!e) log.warn("event not found for checkout", { slug });
+        // `via` matters now that resolution can go two ways: a miss by token
+        // usually means the organizer rotated the link mid-checkout, which is
+        // a different story from a slug that stopped resolving. The token
+        // itself is never logged.
+        if (!e) {
+          log.warn("event not found for checkout", {
+            slug,
+            via: token ? "token" : "slug",
+          });
+        }
       })
       .catch((err) => {
         if (stale) return;

@@ -184,10 +184,21 @@ export function EventDetail({
 
           {/* Tickets, or the RSVP form for an event that sells nothing. */}
           {isRsvp ? (
-            <RsvpPanel
-              token={shareToken ?? ""}
-              closed={Boolean(event.rsvpClosed || event.ended)}
-            />
+            // No token means this was rendered outside the share route, which
+            // shouldn't happen — an RSVP event is always private. Say so
+            // instead of rendering a form that would POST to `/e//rsvp` and
+            // fail with a message about nothing.
+            shareToken ? (
+              <RsvpPanel
+                token={shareToken}
+                closed={Boolean(event.rsvpClosed || event.ended)}
+              />
+            ) : (
+              <p className="mt-7 rounded-2xl border border-line bg-surface p-6 text-center text-sm text-muted">
+                Registration for this event is only available through its
+                invitation link.
+              </p>
+            )
           ) : (
             <div className="mt-7 overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-card)]">
               <div className="flex items-center justify-between border-b border-line bg-surface-2 px-5 py-3">

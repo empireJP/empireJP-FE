@@ -89,6 +89,11 @@ export interface EventItem {
   /** Reachable only by share link — absent from every catalog listing. Drives
    *  the `noindex` on its page: the URL is a secret a crawler could spend. */
   private?: true;
+  /** Only ever sent on `GET /me/saved-events`, and only for a private event the
+   *  user has saved — the row's existence is proof they already held the link.
+   *  A saved private event otherwise renders a card whose `/events/<slug>` href
+   *  is a guaranteed 404, since the API refuses private events by slug. */
+  shareToken?: string;
   /** How to join. Absent means TICKETED, which is every public event. Sent by
    *  the API rather than inferred from `tiers: []`, because an event whose
    *  tiers were all removed looks identical from here. */
