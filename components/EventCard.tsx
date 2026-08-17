@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { EventItem } from "@/lib/types";
 import { EventCover } from "./EventCover";
 import { SaveButton } from "./SaveButton";
+import { Countdown } from "./Countdown";
 import { CalendarIcon, PinIcon } from "./Icons";
 import { dateShort, money, to12h } from "@/lib/format";
 
@@ -54,6 +55,9 @@ export function EventCard({ event }: { event: EventItem }) {
         >
           {priceLabel(event, from)}
         </span>
+        {!over && (
+          <Countdown date={event.date} className="absolute bottom-3 left-3" />
+        )}
         <SaveButton id={event.id} slug={event.slug} className="absolute bottom-3 right-3" />
       </div>
 
